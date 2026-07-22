@@ -342,23 +342,19 @@ export default function App() {
         role: 'user', text: userText, timestamp: serverTimestamp()
       });
 
-      // --- LOGIC ROUTER ---
       let replyText = "";
       
       if (currentMode === 'creative') {
-        // --- CREATIVE MODE (Pollinations) ---
         await new Promise(r => setTimeout(r, 1500)); 
         const encodedPrompt = encodeURIComponent(userText);
         const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=800&height=600&nologo=true`;
         replyText = `🎨 **Image Generated** (via Pollinations AI)\n\n![${userText}](${imageUrl})`;
         
       } else if (!apiKey) {
-        // --- NO KEY (Fallback) ---
         await new Promise(r => setTimeout(r, 400)); 
         replyText = queryLocalBrain(userText);
         
       } else {
-        // --- GEMINI (Standard / Canvas / Custom AI) ---
         let sysPrompt = SYSTEM_PROMPT_STANDARD;
         
         if (currentMode === 'canvas') {
@@ -371,7 +367,7 @@ export default function App() {
           ${selectedAI.isRoleplay ? `2. ROLEPLAY MODE ACTIVE: Ignore real-world accuracy. Actions in asterisks.` : `2. GENERAL MODE: ${selectedAI.accuracy ? "Provide accurate facts." : "Accuracy NOT priority."}`}`;
         }
         
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+        const response = await fetch(`[https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=$](https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=$){apiKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -405,7 +401,7 @@ export default function App() {
     for (const entry of LOCAL_BRAIN) {
       if (entry.triggers.some(t => lowerInput.includes(t))) return entry.response;
     }
-    return "I am currently operating in **Offline Mode**. Please enter a valid API key in settings to unlock full features.";
+    return "I am currently operating in **Offline Mode**. Please enter a valid Gemini API key in Settings to unlock dynamic responses.";
   };
 
   const saveSettings = () => {
@@ -422,7 +418,7 @@ export default function App() {
     return theme.color;
   };
 
-  if (authLoading) return <div className="h-screen w-full bg-[#0B1120] flex items-center justify-center text-slate-500">Loading...</div>;
+  if (authLoading) return <div className="h-screen w-full bg-[#0B1120] flex items-center justify-center text-slate-500">Loading LoganGPT...</div>;
   if (!user) return <Login />;
 
   return (
@@ -472,7 +468,6 @@ export default function App() {
             <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 -ml-2 text-slate-400"><Menu className="w-6 h-6" /></button>
             <div className="flex items-center gap-2">
               <span className="font-bold text-lg tracking-tight text-white">LoganGPT</span>
-              {/* HIDDEN BADGES ON MOBILE */}
               <div className="hidden sm:flex items-center gap-2">
                 {selectedAI ? <span className="flex items-center gap-1 text-[10px] bg-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded-full border border-cyan-500/30 font-bold tracking-wide"><Bot className="w-3 h-3" /> {selectedAI.name.toUpperCase()}</span> : currentMode === 'creative' ? <span className="flex items-center gap-1 text-[10px] bg-pink-500/20 text-pink-400 px-2 py-0.5 rounded-full border border-pink-500/30 font-bold tracking-wide animate-pulse"><Paintbrush className="w-3 h-3" /> CREATIVE</span> : currentMode === 'canvas' ? <span className="flex items-center gap-1 text-[10px] bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full border border-yellow-500/30 font-bold tracking-wide animate-pulse"><Layout className="w-3 h-3" /> CANVAS</span> : !apiKey ? <span className="flex items-center gap-1 text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded border border-white/5"><WifiOff className="w-3 h-3" /> Offline</span> : <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/20">PRO</span>}
               </div>
@@ -504,6 +499,171 @@ export default function App() {
                     {msg.role === 'user' ? <User className="w-4 h-4"/> : (selectedAI ? <Bot className="w-4 h-4"/> : currentMode === 'creative' && msg.role === 'model' ? <ImageIcon className="w-4 h-4"/> : currentMode === 'canvas' && msg.role === 'model' ? <Layout className="w-4 h-4"/> : <Zap className="w-4 h-4" fill="currentColor"/>)}
                   </div>
                   <div className={`relative max-w-[85%] rounded-2xl p-4 text-sm leading-7 shadow-md border overflow-hidden min-w-0 ${msg.role === 'user' ? 'bg-slate-800 text-white border-white/5' : 'bg-slate-900/50 text-slate-200 border-white/5'}`}>
-                    <ReactMarkdown className="prose prose-invert max-w-none break-words" remarkPlugins={[remarkGfm]} components={{ pre: ({node, ...props}) => <div className="w-full overflow-x-auto my-2 rounded-lg border border-white/10"><pre {...props} className="p-3 bg-black/30 min-w-full" /></div>, code: ({node, inline, className, children, ...props}) => inline ? <code className="bg-white/10 rounded px-1 py-0.5 text-xs font-mono break-all" {...props}>{children}</code> : <code className="font-mono text-xs block whitespace-pre" {...props}>{children}</code>, img: ({node, ...props}) => <img {...props} className="rounded-lg shadow-lg max-w-full h-auto border border-white/10 mt-2 mb-2" alt="Generated" /> }}>{msg.text}</ReactMarkdown>
-                    {msg.role === 'model' && msg.text.includes('
-http://googleusercontent.com/immersive_entry_chip/0
+                    <ReactMarkdown 
+                      className="prose prose-invert max-w-none break-words" 
+                      remarkPlugins={[remarkGfm]} 
+                      components={{ 
+                        pre: ({node, ...props}) => <div className="w-full overflow-x-auto my-2 rounded-lg border border-white/10"><pre {...props} className="p-3 bg-black/30 min-w-full" /></div>, 
+                        code: ({node, inline, className, children, ...props}) => inline ? <code className="bg-white/10 rounded px-1 py-0.5 text-xs font-mono break-all" {...props}>{children}</code> : <code className="font-mono text-xs block whitespace-pre" {...props}>{children}</code>, 
+                        img: ({node, ...props}) => <img {...props} className="rounded-lg shadow-lg max-w-full h-auto border border-white/10 mt-2 mb-2" alt="Generated" /> 
+                      }}
+                    >
+                      {msg.text}
+                    </ReactMarkdown>
+
+                    {/* Canvas Trigger Bar */}
+                    {msg.role === 'model' && msg.text.includes('```html') && (
+                      <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">
+                        <span className="text-xs text-yellow-400 font-medium flex items-center gap-1.5"><Layout className="w-3.5 h-3.5"/> Interactive Canvas Built</span>
+                        <button onClick={() => setIsCanvasPreviewOpen(true)} className="px-3 py-1 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 border border-yellow-500/40 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors">
+                          <Play className="w-3 h-3" fill="currentColor"/> Launch App
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {isLoading && (
+                <div className="flex gap-4">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold shadow-lg animate-pulse" style={{ backgroundColor: getAccentColor() }}>
+                    <Zap className="w-4 h-4" fill="currentColor"/>
+                  </div>
+                  <div className="bg-slate-900/50 rounded-2xl p-4 text-xs text-slate-400 border border-white/5 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-slate-500 animate-ping" /> Generating response...
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </main>
+
+        {/* Input Bar */}
+        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-[#0B1120] via-[#0B1120]/90 to-transparent p-4">
+          <form onSubmit={handleSend} className="max-w-3xl mx-auto relative flex items-center bg-slate-900/80 border border-white/10 rounded-2xl shadow-2xl backdrop-blur-xl focus-within:border-white/20 transition-all">
+            <input 
+              type="text" 
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={selectedAI ? `Message ${selectedAI.name}...` : currentMode === 'creative' ? "Describe an image to generate..." : currentMode === 'canvas' ? "Describe an app or game to build..." : "Message LoganGPT..."}
+              className="w-full bg-transparent px-5 py-4 text-sm text-white focus:outline-none placeholder-slate-500 pr-12"
+            />
+            <button 
+              type="submit"
+              disabled={!input.trim() || isLoading}
+              className="absolute right-2 p-2.5 rounded-xl text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-md"
+              style={{ backgroundColor: getAccentColor() }}
+            >
+              <Send className="w-4 h-4"/>
+            </button>
+          </form>
+        </div>
+      </div>
+
+      {/* Canvas Preview Modal */}
+      {isCanvasPreviewOpen && canvasCode && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex flex-col">
+          <div className="bg-slate-900 border-b border-white/10 p-3 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-yellow-400 font-semibold text-sm">
+              <Layout className="w-4 h-4"/> Live Prototyping Canvas
+            </div>
+            <button onClick={() => setIsCanvasPreviewOpen(false)} className="p-1 text-slate-400 hover:text-white rounded-lg">
+              <X className="w-5 h-5"/>
+            </button>
+          </div>
+          <iframe 
+            title="LoganGPT Live Canvas"
+            srcDoc={canvasCode}
+            className="w-full flex-1 border-none bg-white"
+          />
+        </div>
+      )}
+
+      {/* Custom AI Creator Modal */}
+      {isCreatorOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-white/10 rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg text-white flex items-center gap-2"><Bot className="w-5 h-5 text-cyan-400"/> Create Persona</h3>
+              <button onClick={() => setIsCreatorOpen(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5"/></button>
+            </div>
+            <div className="space-y-4 text-sm">
+              <div>
+                <label className="block text-slate-400 mb-1 font-medium">Name</label>
+                <input type="text" value={newAIName} onChange={(e) => setNewAIName(e.target.value)} placeholder="e.g. Code Mentor, Pirate AI" className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white focus:outline-none focus:border-cyan-500" />
+              </div>
+              <div>
+                <label className="block text-slate-400 mb-1 font-medium">Personality Instructions</label>
+                <textarea value={newAIPersonality} onChange={(e) => setNewAIPersonality(e.target.value)} placeholder="Describe how it talks and acts..." className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white h-24 focus:outline-none focus:border-cyan-500 resize-none" />
+              </div>
+              <div className="flex items-center justify-between pt-2">
+                <span className="text-slate-300">Roleplay Mode</span>
+                <button onClick={() => setNewAIRoleplay(!newAIRoleplay)} className={`p-1 rounded-full transition-colors ${newAIRoleplay ? 'text-cyan-400' : 'text-slate-600'}`}>
+                  {newAIRoleplay ? <ToggleRight className="w-7 h-7"/> : <ToggleLeft className="w-7 h-7"/>}
+                </button>
+              </div>
+              <button onClick={createCustomAI} className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-3 rounded-xl transition-all shadow-lg shadow-cyan-900/20 mt-4">
+                Build Persona
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {isSettingsOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-white/10 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="font-bold text-lg text-white flex items-center gap-2"><Settings className="w-5 h-5"/> Settings</h3>
+              <button onClick={() => setIsSettingsOpen(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5"/></button>
+            </div>
+            
+            <div className="space-y-6">
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Gemini API Key</label>
+                <div className="relative">
+                  <Key className="absolute left-3 top-3.5 w-4 h-4 text-slate-500"/>
+                  <input 
+                    type="password" 
+                    value={apiKey} 
+                    onChange={(e) => setApiKey(e.target.value)} 
+                    placeholder="AIzaSy..." 
+                    className="w-full bg-slate-950 border border-white/10 rounded-xl py-3 pl-9 pr-4 text-sm text-white focus:outline-none focus:border-violet-500" 
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1.5">Leave blank to use internal local brain mode.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Accent Theme</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    { color: '#8b5cf6', hover: '#7c3aed', name: 'Violet' },
+                    { color: '#3b82f6', hover: '#2563eb', name: 'Blue' },
+                    { color: '#10b981', hover: '#059669', name: 'Emerald' },
+                    { color: '#f59e0b', hover: '#d97706', name: 'Amber' }
+                  ].map((t) => (
+                    <button 
+                      key={t.name}
+                      onClick={() => setTheme(t)}
+                      className={`p-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-semibold transition-all ${theme.name === t.name ? 'border-white bg-white/10 text-white' : 'border-white/5 bg-slate-950 text-slate-400'}`}
+                    >
+                      <span className="w-3 h-3 rounded-full" style={{ backgroundColor: t.color }} />
+                      {t.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-white/10 flex justify-end gap-3">
+                <button onClick={() => setIsSettingsOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white">Cancel</button>
+                <button onClick={saveSettings} className="px-5 py-2.5 rounded-xl text-xs font-semibold text-white bg-violet-600 hover:bg-violet-500 transition-all shadow-lg">Save Changes</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
