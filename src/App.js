@@ -297,7 +297,7 @@ export default function App() {
   const deleteChat = async (e, chatId) => {
     e.stopPropagation();
     if (!user) return;
-    await deleteDoc(doc(doc(db, 'users', user.uid, 'chats', chatId)));
+    await deleteDoc(doc(db, 'users', user.uid, 'chats', chatId));
     if (activeChatId === chatId) {
       setActiveChatId(null);
       setMessages([]);
@@ -360,30 +360,40 @@ export default function App() {
       } else if (!activeKey) {
         replyText = queryLocalBrain(userText);
       } else {
-        let sysPrompt = SYSTEM_PROMPT_STANDARD;
+        let fullPrompt = userText;
         if (currentMode === 'canvas') {
-          sysPrompt = SYSTEM_PROMPT_CANVAS;
+          fullPrompt = `${SYSTEM_PROMPT_CANVAS}\n\nUser Request: ${userText}`;
         } else if (selectedAI) {
-          sysPrompt = `You are a custom AI Persona named ${selectedAI.name}. PERSONALITY: ${selectedAI.personality}`;
+          fullPrompt = `You are a custom AI Persona named ${selectedAI.name}. PERSONALITY: ${selectedAI.personality}\n\nUser Request: ${userText}`;
         }
 
-        const response = await fetch(`[https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$](https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$){activeKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: userText }] }],
-            systemInstruction: { parts: [{ text: sysPrompt }] }
-          })
-        });
+        const response = await fetch(
+          `[https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$](https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$){activeKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [
+                {
+                  role: 'user',
+                  parts: [{ text: fullPrompt }]
+                }
+              ]
+            })
+          }
+        );
 
         const responseText = await response.text();
-        if (!responseText) throw new Error("Empty response payload received from Google.");
+        
+        if (!responseText) {
+          throw new Error(`Google returned an empty payload (HTTP Status: ${response.status} ${response.statusText}).`);
+        }
 
         let data;
         try {
           data = JSON.parse(responseText);
         } catch (jsonErr) {
-          throw new Error(`Google returned non-JSON response: ${responseText.slice(0, 120)}`);
+          throw new Error(`Non-JSON response (HTTP ${response.status}): ${responseText.slice(0, 100)}`);
         }
 
         if (!response.ok || data.error) {
