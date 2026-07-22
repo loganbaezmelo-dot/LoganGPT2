@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Menu, X, Send, Settings, Plus, 
   Trash2, Monitor, Zap, Cloud, LogOut, Mail, Lock, 
-  Key, User, WifiOff, Image as ImageIcon, 
+  Key, User, WifiOff, Image as ImageIcon, ExternalLink,
   Paintbrush, Layout, Play, Bot, ToggleLeft, ToggleRight
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -624,7 +624,17 @@ export default function App() {
             
             <div className="space-y-6">
               <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Gemini API Key</label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Gemini API Key</label>
+                  <a 
+                    href="https://aistudio.google.com/app/apikey" 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1 transition-colors font-medium"
+                  >
+                    Get API Key <ExternalLink className="w-3 h-3"/>
+                  </a>
+                </div>
                 <div className="relative">
                   <Key className="absolute left-3 top-3.5 w-4 h-4 text-slate-500"/>
                   <input 
@@ -635,7 +645,7 @@ export default function App() {
                     className="w-full bg-slate-950 border border-white/10 rounded-xl py-3 pl-9 pr-4 text-sm text-white focus:outline-none focus:border-violet-500" 
                   />
                 </div>
-                <p className="text-[11px] text-slate-500 mt-1.5">Leave blank to use internal local brain mode.</p>
+                <p className="text-[11px] text-slate-500 mt-1.5">Get a free key from Google AI Studio. Leave blank to use local brain mode.</p>
               </div>
 
               <div>
