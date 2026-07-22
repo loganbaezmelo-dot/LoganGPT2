@@ -367,8 +367,9 @@ export default function App() {
           fullPrompt = `You are a custom AI Persona named ${selectedAI.name}. PERSONALITY: ${selectedAI.personality}\n\nUser Request: ${userText}`;
         }
 
+        // Updated endpoint to gemini-3.6-flash
         const response = await fetch(
-          `[https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$](https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$){activeKey}`,
+          `[https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=$](https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=$){activeKey}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
