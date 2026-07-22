@@ -210,7 +210,6 @@ export default function App() {
     const q = query(collection(db, 'users', user.uid, 'chats'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const loadedChats = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      // Sort manually client-side so missing serverTimestamps on instant writes don't crash the query
       loadedChats.sort((a, b) => (b.timestamp?.seconds || Date.now()) - (a.timestamp?.seconds || Date.now()));
       setChats(loadedChats);
     }, (err) => console.error("Chats Listener Error:", err));
@@ -377,18 +376,21 @@ export default function App() {
           })
         });
 
+        // Safely extract raw text response before JSON parse
         const responseText = await response.text();
-        if (!responseText) throw new Error("Empty response received from API server.");
+        if (!responseText) {
+          throw new Error("Empty response received from Google API.");
+        }
 
         let data;
         try {
           data = JSON.parse(responseText);
-        } catch (e) {
-          throw new Error(`Invalid JSON: ${responseText.slice(0, 100)}`);
+        } catch (jsonErr) {
+          throw new Error(`Google returned non-JSON response: ${responseText.slice(0, 120)}`);
         }
 
         if (!response.ok || data.error) {
-          throw new Error(data.error?.message || `HTTP ${response.status}`);
+          throw new Error(data.error?.message || `Google API Error (HTTP ${response.status})`);
         }
 
         replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
@@ -400,13 +402,17 @@ export default function App() {
 
     } catch (err) {
       console.error("Messaging Error:", err);
+      
+      // Print the exact API error on screen so you can debug it instantly!
+      const errorDetails = `⚠️ **API Error Details:** ${err.message}`;
       const fallbackText = queryLocalBrain(userText);
+      const combinedReply = `${errorDetails}\n\n---\n\n*Falling back to local brain:*\n${fallbackText}`;
 
-      setMessages((prev) => [...prev, { role: 'model', text: fallbackText, timestamp: new Date() }]);
+      setMessages((prev) => [...prev, { role: 'model', text: combinedReply, timestamp: new Date() }]);
 
       if (currentChatId) {
         await addDoc(collection(db, 'users', user.uid, 'chats', currentChatId, 'messages'), {
-          role: 'model', text: fallbackText, timestamp: serverTimestamp()
+          role: 'model', text: combinedReply, timestamp: serverTimestamp()
         }).catch(e => console.error("Firestore Fallback Error:", e));
       }
     } finally {
