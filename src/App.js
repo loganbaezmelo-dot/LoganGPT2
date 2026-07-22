@@ -42,6 +42,19 @@ const LOCAL_BRAIN = [
 const SYSTEM_PROMPT_STANDARD = "You are LoganGPT. Helpful, professional, and precise. Format responses clearly using Markdown.";
 const SYSTEM_PROMPT_CANVAS = "You are LoganGPT Canvas. Your goal is to build functional web applications based on user requests. OUTPUT RULES: 1. Provide a SINGLE, SELF-CONTAINED HTML file inside a markdown code block (```html ... ```). 2. Include all CSS (in <style>) and JS (in <script>) within that file. 3. Make the design modern, clean, and responsive. 4. Do not explain the code excessively, just build it. 5. If the user asks for a game or tool, make it playable/usable immediately.";
 
+// --- RETRY FETCH HELPER (BORROWED FROM WORKING PROJECT) ---
+const fetchWithRetry = async (url, options, retries = 2, backoff = 500) => {
+  try {
+    const response = await fetch(url, options);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } catch (err) {
+    if (retries <= 0) throw err;
+    await new Promise(r => setTimeout(r, backoff));
+    return fetchWithRetry(url, options, retries - 1, backoff * 1.5);
+  }
+};
+
 // --- LOGIN COMPONENT ---
 function Login() {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -360,44 +373,47 @@ export default function App() {
       } else if (!activeKey) {
         replyText = queryLocalBrain(userText);
       } else {
-        let fullPrompt = userText;
+        let sysPrompt = SYSTEM_PROMPT_STANDARD;
         if (currentMode === 'canvas') {
-          fullPrompt = `${SYSTEM_PROMPT_CANVAS}\n\nUser Request: ${userText}`;
+          sysPrompt = SYSTEM_PROMPT_CANVAS;
         } else if (selectedAI) {
-          fullPrompt = `You are a custom AI Persona named ${selectedAI.name}. PERSONALITY: ${selectedAI.personality}\n\nUser Request: ${userText}`;
+          sysPrompt = `You are a custom AI Persona named ${selectedAI.name}. PERSONALITY: ${selectedAI.personality}`;
         }
 
-        const response = await fetch(
+        // Convert chat history for Gemini memory context (past 10 turns)
+        const formattedHistory = (messages || [])
+          .filter(m => m && typeof m.text === 'string' && m.text.trim() !== '')
+          .slice(-10)
+          .map(m => ({
+            role: m.role === 'model' ? 'model' : 'user',
+            parts: [{ text: m.text }]
+          }));
+
+        // Gemini API requires conversation to start with 'user'
+        while (formattedHistory.length > 0 && formattedHistory[0].role === 'model') {
+          formattedHistory.shift();
+        }
+
+        const requestContents = [
+          ...formattedHistory,
+          { role: 'user', parts: [{ text: userText }] }
+        ];
+
+        // Exact fetch payload from your working project:
+        const data = await fetchWithRetry(
           `[https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=$](https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=$){activeKey}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              contents: [
-                {
-                  role: 'user',
-                  parts: [{ text: fullPrompt }]
-                }
-              ]
+              contents: requestContents,
+              systemInstruction: { parts: [{ text: sysPrompt }] }
             })
           }
         );
 
-        const responseText = await response.text();
-        
-        if (!responseText) {
-          throw new Error(`Google returned an empty payload (HTTP Status: ${response.status} ${response.statusText}).`);
-        }
-
-        let data;
-        try {
-          data = JSON.parse(responseText);
-        } catch (jsonErr) {
-          throw new Error(`Non-JSON response (HTTP ${response.status}): ${responseText.slice(0, 100)}`);
-        }
-
-        if (!response.ok || data.error) {
-          throw new Error(data.error?.message || `Google API Error (HTTP ${response.status})`);
+        if (data.error) {
+          throw new Error(data.error?.message || "Google API returned an error.");
         }
 
         replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
