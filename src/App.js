@@ -297,7 +297,7 @@ export default function App() {
   const deleteChat = async (e, chatId) => {
     e.stopPropagation();
     if (!user) return;
-    await deleteDoc(doc(db, 'users', user.uid, 'chats', chatId));
+    await deleteDoc(doc(doc(db, 'users', user.uid, 'chats', chatId)));
     if (activeChatId === chatId) {
       setActiveChatId(null);
       setMessages([]);
@@ -326,7 +326,7 @@ export default function App() {
 
     let currentChatId = activeChatId;
 
-    // Optimistic UI Update so user message shows immediately
+    // Optimistic UI Update
     const optimisticUserMsg = { role: 'user', text: userText, timestamp: new Date() };
     setMessages((prev) => [...prev, optimisticUserMsg]);
 
@@ -367,12 +367,11 @@ export default function App() {
           sysPrompt = `You are a custom AI Persona named ${selectedAI.name}. PERSONALITY: ${selectedAI.personality}`;
         }
 
-        // Updated endpoint to gemini-3.5-flash
-        const response = await fetch(`[https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$](https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$){activeKey}`, {
+        const response = await fetch(`[https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$](https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$){activeKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: userText }] }],
+            contents: [{ role: 'user', parts: [{ text: userText }] }],
             systemInstruction: { parts: [{ text: sysPrompt }] }
           })
         });
