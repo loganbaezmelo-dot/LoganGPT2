@@ -160,10 +160,10 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   
-  // Settings & Modes
-  const [apiKey, setApiKey] = useState('');
-  const [currentMode, setCurrentMode] = useState('standard'); // standard | creative | canvas
-  const [selectedAI, setSelectedAI] = useState(null); // null = Standard LoganGPT
+  // Settings & Modes (Initialize directly from LocalStorage)
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
+  const [currentMode, setCurrentMode] = useState('standard'); 
+  const [selectedAI, setSelectedAI] = useState(null); 
   const [isCreatorOpen, setIsCreatorOpen] = useState(false);
   
   // Data
@@ -191,17 +191,14 @@ export default function App() {
 
   const chatContainerRef = useRef(null);
 
-  // Auth & Config Loading
+  // Auth Loading
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setAuthLoading(false);
     });
-    
-    const savedKey = localStorage.getItem('gemini_api_key');
+
     const savedTheme = JSON.parse(localStorage.getItem('logan_theme'));
-    
-    if (savedKey) setApiKey(savedKey);
     if (savedTheme) setTheme(savedTheme);
 
     return () => unsubscribe();
@@ -330,6 +327,9 @@ export default function App() {
     const optimisticUserMsg = { role: 'user', text: userText, timestamp: new Date() };
     setMessages((prev) => [...prev, optimisticUserMsg]);
 
+    // Check key from state or fallback directly to localStorage
+    const activeKey = (apiKey || localStorage.getItem('gemini_api_key') || '').trim();
+
     try {
       if (!currentChatId) {
         const chatRef = await addDoc(collection(db, 'users', user.uid, 'chats'), {
@@ -355,7 +355,8 @@ export default function App() {
         const encodedPrompt = encodeURIComponent(userText);
         const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=800&height=600&nologo=true`;
         replyText = `🎨 **Image Generated** (via Pollinations AI)\n\n![${userText}](${imageUrl})`;
-      } else if (!apiKey) {
+      } else if (!activeKey) {
+        // Only run local brain if NO API key exists anywhere
         replyText = queryLocalBrain(userText);
       } else {
         let sysPrompt = SYSTEM_PROMPT_STANDARD;
@@ -365,7 +366,7 @@ export default function App() {
           sysPrompt = `You are a custom AI Persona named ${selectedAI.name}. PERSONALITY: ${selectedAI.personality}`;
         }
 
-        const response = await fetch(`[https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$](https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$){apiKey}`, {
+        const response = await fetch(`[https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$](https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$){activeKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -374,8 +375,12 @@ export default function App() {
           })
         });
 
-        if (!response.ok) throw new Error(`API HTTP Error: ${response.status}`);
         const data = await response.json();
+
+        if (!response.ok || data.error) {
+          throw new Error(data.error?.message || `HTTP ${response.status}`);
+        }
+
         replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
       }
 
@@ -385,9 +390,10 @@ export default function App() {
 
     } catch (err) {
       console.error("Messaging Error:", err);
-      const fallbackText = queryLocalBrain(userText);
+      
+      // Notify the user on screen if the API returned an explicit error
+      const fallbackText = `⚠️ **API Error:** ${err.message}\n\nRunning fallback response:\n\n` + queryLocalBrain(userText);
 
-      // Optimistic Model Update for local brain fallback
       setMessages((prev) => [...prev, { role: 'model', text: fallbackText, timestamp: new Date() }]);
 
       if (currentChatId) {
@@ -409,8 +415,14 @@ export default function App() {
   };
 
   const saveSettings = () => {
-    if (apiKey.trim()) localStorage.setItem('gemini_api_key', apiKey);
-    else localStorage.removeItem('gemini_api_key');
+    const trimmed = apiKey.trim();
+    if (trimmed) {
+      localStorage.setItem('gemini_api_key', trimmed);
+      setApiKey(trimmed);
+    } else {
+      localStorage.removeItem('gemini_api_key');
+      setApiKey('');
+    }
     localStorage.setItem('logan_theme', JSON.stringify(theme));
     setIsSettingsOpen(false);
   };
