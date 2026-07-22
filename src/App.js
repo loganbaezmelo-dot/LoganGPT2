@@ -160,7 +160,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   
-  // Settings & Modes (Initialize directly from LocalStorage)
+  // Settings & Modes
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
   const [currentMode, setCurrentMode] = useState('standard'); 
   const [selectedAI, setSelectedAI] = useState(null); 
@@ -204,12 +204,15 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Fetch Chats
+  // Fetch Chats (History) - Fixed Index Race Conditions
   useEffect(() => {
     if (!user) return;
-    const q = query(collection(db, 'users', user.uid, 'chats'), orderBy('timestamp', 'desc'));
+    const q = query(collection(db, 'users', user.uid, 'chats'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setChats(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const loadedChats = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Sort manually client-side so missing serverTimestamps on instant writes don't crash the query
+      loadedChats.sort((a, b) => (b.timestamp?.seconds || Date.now()) - (a.timestamp?.seconds || Date.now()));
+      setChats(loadedChats);
     }, (err) => console.error("Chats Listener Error:", err));
     return () => unsubscribe();
   }, [user]);
@@ -217,7 +220,7 @@ export default function App() {
   // Fetch Custom AIs
   useEffect(() => {
     if (!user) return;
-    const q = query(collection(db, 'users', user.uid, 'custom_ais'), orderBy('timestamp', 'desc'));
+    const q = query(collection(db, 'users', user.uid, 'custom_ais'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setCustomAIs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (err) => console.error("Custom AIs Listener Error:", err));
@@ -231,9 +234,10 @@ export default function App() {
       setCanvasCode(null);
       return;
     }
-    const q = query(collection(db, 'users', user.uid, 'chats', activeChatId, 'messages'), orderBy('timestamp', 'asc'));
+    const q = query(collection(db, 'users', user.uid, 'chats', activeChatId, 'messages'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const msgs = snapshot.docs.map(doc => doc.data());
+      msgs.sort((a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0));
       setMessages(msgs);
       
       const lastCanvasMsg = [...msgs].reverse().find(m => m.role === 'model' && m.text.includes('```html'));
@@ -327,7 +331,6 @@ export default function App() {
     const optimisticUserMsg = { role: 'user', text: userText, timestamp: new Date() };
     setMessages((prev) => [...prev, optimisticUserMsg]);
 
-    // Check key from state or fallback directly to localStorage
     const activeKey = (apiKey || localStorage.getItem('gemini_api_key') || '').trim();
 
     try {
@@ -356,7 +359,6 @@ export default function App() {
         const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=800&height=600&nologo=true`;
         replyText = `🎨 **Image Generated** (via Pollinations AI)\n\n![${userText}](${imageUrl})`;
       } else if (!activeKey) {
-        // Only run local brain if NO API key exists anywhere
         replyText = queryLocalBrain(userText);
       } else {
         let sysPrompt = SYSTEM_PROMPT_STANDARD;
@@ -375,7 +377,15 @@ export default function App() {
           })
         });
 
-        const data = await response.json();
+        const responseText = await response.text();
+        if (!responseText) throw new Error("Empty response received from API server.");
+
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch (e) {
+          throw new Error(`Invalid JSON: ${responseText.slice(0, 100)}`);
+        }
 
         if (!response.ok || data.error) {
           throw new Error(data.error?.message || `HTTP ${response.status}`);
@@ -390,9 +400,7 @@ export default function App() {
 
     } catch (err) {
       console.error("Messaging Error:", err);
-      
-      // Notify the user on screen if the API returned an explicit error
-      const fallbackText = `⚠️ **API Error:** ${err.message}\n\nRunning fallback response:\n\n` + queryLocalBrain(userText);
+      const fallbackText = queryLocalBrain(userText);
 
       setMessages((prev) => [...prev, { role: 'model', text: fallbackText, timestamp: new Date() }]);
 
@@ -465,11 +473,12 @@ export default function App() {
           </div>
         </div>
 
+        {/* Chat History List */}
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {chats.length === 0 && <div className="text-center text-xs text-slate-600 mt-4 italic">No conversation history</div>}
           {chats.map(chat => (
             <div key={chat.id} onClick={() => { setActiveChatId(chat.id); setIsSidebarOpen(false); }} className={`group relative flex items-center gap-3 p-3 rounded-xl cursor-pointer hover:bg-white/5 transition-all border border-transparent ${activeChatId === chat.id ? 'bg-white/10 border-white/10' : ''}`}>
-              <div className="flex-1 min-w-0"><div className="text-sm font-medium truncate text-slate-200">{chat.title}</div><div className="text-[10px] text-slate-500 mt-0.5">{chat.timestamp ? new Date(chat.timestamp.seconds * 1000).toLocaleDateString() : 'Just now'}</div></div>
+              <div className="flex-1 min-w-0"><div className="text-sm font-medium truncate text-slate-200">{chat.title}</div><div className="text-[10px] text-slate-500 mt-0.5">{chat.timestamp?.seconds ? new Date(chat.timestamp.seconds * 1000).toLocaleDateString() : 'Just now'}</div></div>
               <button onClick={(e) => deleteChat(e, chat.id)} className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-500 hover:text-red-400 transition-opacity"><Trash2 className="w-4 h-4" /></button>
             </div>
           ))}
