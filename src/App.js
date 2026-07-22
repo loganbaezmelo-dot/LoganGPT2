@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Menu, X, Send, Settings, Plus, MessageSquare, 
-  Trash2, Monitor, Code, Zap, Cloud, LogOut, Mail, Lock, 
-  Key, Palette, ExternalLink, User, WifiOff, Image as ImageIcon, 
-  Sparkles, CheckCircle, Paintbrush, Layout, Play, Bot, ToggleLeft, ToggleRight
+  Menu, X, Send, Settings, Plus, 
+  Trash2, Monitor, Zap, Cloud, LogOut, Mail, Lock, 
+  Key, User, WifiOff, Image as ImageIcon, 
+  Paintbrush, Layout, Play, Bot, ToggleLeft, ToggleRight
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -164,7 +164,6 @@ export default function App() {
   const [apiKey, setApiKey] = useState('');
   const [currentMode, setCurrentMode] = useState('standard'); // standard | creative | canvas
   const [selectedAI, setSelectedAI] = useState(null); // null = Standard LoganGPT
-  const [settingsTab, setSettingsTab] = useState('general');
   const [isCreatorOpen, setIsCreatorOpen] = useState(false);
   
   // Data
@@ -214,7 +213,7 @@ export default function App() {
     const q = query(collection(db, 'users', user.uid, 'chats'), orderBy('timestamp', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setChats(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    }, (err) => console.error("Chats Listener Error:", err));
     return () => unsubscribe();
   }, [user]);
 
@@ -224,7 +223,7 @@ export default function App() {
     const q = query(collection(db, 'users', user.uid, 'custom_ais'), orderBy('timestamp', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setCustomAIs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    }, (err) => console.error("Custom AIs Listener Error:", err));
     return () => unsubscribe();
   }, [user]);
 
@@ -247,7 +246,7 @@ export default function App() {
           setCanvasCode(match[1]);
         }
       }
-    });
+    }, (err) => console.error("Messages Listener Error:", err));
     return () => unsubscribe();
   }, [user, activeChatId]);
 
@@ -269,6 +268,7 @@ export default function App() {
 
   const createNewChat = (ai = null) => {
     setActiveChatId(null);
+    setMessages([]);
     setInput('');
     setCanvasCode(null);
     setIsSidebarOpen(false);
@@ -298,7 +298,10 @@ export default function App() {
     e.stopPropagation();
     if (!user) return;
     await deleteDoc(doc(db, 'users', user.uid, 'chats', chatId));
-    if (activeChatId === chatId) setActiveChatId(null);
+    if (activeChatId === chatId) {
+      setActiveChatId(null);
+      setMessages([]);
+    }
   };
 
   const deleteCustomAI = async (e, aiId) => {
@@ -323,12 +326,16 @@ export default function App() {
 
     let currentChatId = activeChatId;
 
+    // Optimistic UI Update so user message shows immediately
+    const optimisticUserMsg = { role: 'user', text: userText, timestamp: new Date() };
+    setMessages((prev) => [...prev, optimisticUserMsg]);
+
     try {
       if (!currentChatId) {
         const chatRef = await addDoc(collection(db, 'users', user.uid, 'chats'), {
-          title: userText,
+          title: userText.slice(0, 30),
           timestamp: serverTimestamp(),
-          aiId: selectedAI ? selectedAI.id : 'logan-default'
+          aiId: selectedAI?.id || 'logan-default'
         });
         currentChatId = chatRef.id;
         setActiveChatId(currentChatId);
@@ -343,30 +350,21 @@ export default function App() {
       });
 
       let replyText = "";
-      
+
       if (currentMode === 'creative') {
-        await new Promise(r => setTimeout(r, 1500)); 
         const encodedPrompt = encodeURIComponent(userText);
         const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=800&height=600&nologo=true`;
         replyText = `🎨 **Image Generated** (via Pollinations AI)\n\n![${userText}](${imageUrl})`;
-        
       } else if (!apiKey) {
-        await new Promise(r => setTimeout(r, 400)); 
         replyText = queryLocalBrain(userText);
-        
       } else {
         let sysPrompt = SYSTEM_PROMPT_STANDARD;
-        
         if (currentMode === 'canvas') {
           sysPrompt = SYSTEM_PROMPT_CANVAS;
         } else if (selectedAI) {
-          sysPrompt = `You are a custom AI Persona named ${selectedAI.name}. 
-          PERSONALITY: ${selectedAI.personality}
-          RULES:
-          1. Act strictly according to your personality.
-          ${selectedAI.isRoleplay ? `2. ROLEPLAY MODE ACTIVE: Ignore real-world accuracy. Actions in asterisks.` : `2. GENERAL MODE: ${selectedAI.accuracy ? "Provide accurate facts." : "Accuracy NOT priority."}`}`;
+          sysPrompt = `You are a custom AI Persona named ${selectedAI.name}. PERSONALITY: ${selectedAI.personality}`;
         }
-        
+
         const response = await fetch(`[https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=$](https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=$){apiKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -375,9 +373,10 @@ export default function App() {
             systemInstruction: { parts: [{ text: sysPrompt }] }
           })
         });
-        if (!response.ok) throw new Error("API_FAIL");
+
+        if (!response.ok) throw new Error(`API HTTP Error: ${response.status}`);
         const data = await response.json();
-        replyText = data.candidates[0].content.parts[0].text;
+        replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
       }
 
       await addDoc(collection(db, 'users', user.uid, 'chats', currentChatId, 'messages'), {
@@ -385,11 +384,16 @@ export default function App() {
       });
 
     } catch (err) {
-      const fallback = queryLocalBrain(userText);
+      console.error("Messaging Error:", err);
+      const fallbackText = queryLocalBrain(userText);
+
+      // Optimistic Model Update for local brain fallback
+      setMessages((prev) => [...prev, { role: 'model', text: fallbackText, timestamp: new Date() }]);
+
       if (currentChatId) {
         await addDoc(collection(db, 'users', user.uid, 'chats', currentChatId, 'messages'), {
-          role: 'model', text: fallback, timestamp: serverTimestamp()
-        });
+          role: 'model', text: fallbackText, timestamp: serverTimestamp()
+        }).catch(e => console.error("Firestore Fallback Error:", e));
       }
     } finally {
       setIsLoading(false);
@@ -481,7 +485,7 @@ export default function App() {
         </header>
 
         <main ref={chatContainerRef} className="flex-1 overflow-y-auto pt-20 pb-28 px-4 scroll-smooth">
-          {!activeChatId ? (
+          {(!activeChatId && messages.length === 0) ? (
             <div className="max-w-2xl mx-auto mt-12 md:mt-20 text-center space-y-8 px-4 animate-fade-in">
               <div className="relative w-20 h-20 mx-auto">
                 <div className={`absolute inset-0 bg-gradient-to-tr rounded-2xl blur-xl opacity-50 animate-pulse ${selectedAI ? 'from-cyan-500 to-blue-500' : currentMode === 'creative' ? 'from-pink-500 to-rose-500' : currentMode === 'canvas' ? 'from-yellow-500 to-orange-500' : 'from-violet-500 to-indigo-500'}`}></div>
