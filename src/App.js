@@ -204,7 +204,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Fetch Chats (History) - Fixed Index Race Conditions
+  // Fetch Chats (History)
   useEffect(() => {
     if (!user) return;
     const q = query(collection(db, 'users', user.uid, 'chats'));
@@ -367,20 +367,18 @@ export default function App() {
           sysPrompt = `You are a custom AI Persona named ${selectedAI.name}. PERSONALITY: ${selectedAI.personality}`;
         }
 
-        const response = await fetch(`[https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$](https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$){activeKey}`, {
+        // Updated endpoint to gemini-3.5-flash
+        const response = await fetch(`[https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$](https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$){activeKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: userText }] }],
+            contents: [{ parts: [{ text: userText }] }],
             systemInstruction: { parts: [{ text: sysPrompt }] }
           })
         });
 
-        // Safely extract raw text response before JSON parse
         const responseText = await response.text();
-        if (!responseText) {
-          throw new Error("Empty response received from Google API.");
-        }
+        if (!responseText) throw new Error("Empty response payload received from Google.");
 
         let data;
         try {
@@ -403,7 +401,6 @@ export default function App() {
     } catch (err) {
       console.error("Messaging Error:", err);
       
-      // Print the exact API error on screen so you can debug it instantly!
       const errorDetails = `⚠️ **API Error Details:** ${err.message}`;
       const fallbackText = queryLocalBrain(userText);
       const combinedReply = `${errorDetails}\n\n---\n\n*Falling back to local brain:*\n${fallbackText}`;
