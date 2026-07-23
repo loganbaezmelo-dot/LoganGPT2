@@ -27,11 +27,11 @@ import {
 const LOCAL_BRAIN = [
   { 
     triggers: ["who are you", "what are you", "your name"], 
-    response: "I am **LoganGPT**, an enterprise workspace powered by **GPT-5.6-Terra**. I support text reasoning, image generation, and live app prototyping (Canvas Mode)." 
+    response: "I am **LoganGPT**, an enterprise workspace powered by **GPT-5.6-Terra**. I support high-reasoning text processing, image generation, and live code prototyping (Canvas Mode)." 
   },
   { 
     triggers: ["tiers", "pricing", "cost", "plans"], 
-    response: "I operate on a tiered model:\n\n* **Standard Tier:** High-performance text powered by GPT-5.6-Terra.\n* **Creative Tier:** Unlocks image generation (Included).\n* **Canvas Tier:** Enables live code prototyping." 
+    response: "I operate on a tiered model:\n\n* **Standard Tier:** Powered by GPT-5.6-Terra.\n* **Creative Tier:** Unlocks image generation (Included).\n* **Canvas Tier:** Enables live code prototyping." 
   },
   { 
     triggers: ["hello", "hi"], 
@@ -42,7 +42,7 @@ const LOCAL_BRAIN = [
 const SYSTEM_PROMPT_STANDARD = "You are LoganGPT, an elite enterprise AI running on GPT-5.6-Terra. Format responses clearly using Markdown.";
 const SYSTEM_PROMPT_CANVAS = "You are LoganGPT Canvas running on GPT-5.6-Terra. Your goal is to build functional web applications based on user requests. OUTPUT RULES: 1. Provide a SINGLE, SELF-CONTAINED HTML file inside a markdown code block (```html ... ```). 2. Include all CSS (in <style>) and JS (in <script>) within that file. 3. Make the design modern, clean, and responsive. 4. Do not explain the code excessively, just build it. 5. If the user asks for a game or tool, make it playable/usable immediately.";
 
-// --- RETRY FETCH HELPER WITH SAFE ERROR STREAM READING ---
+// --- RETRY FETCH HELPER ---
 const fetchWithRetry = async (url, options, retries = 2, backoff = 500) => {
   try {
     const response = await fetch(url, options);
@@ -231,7 +231,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Fetch Chats (History)
+  // Fetch Chats
   useEffect(() => {
     if (!user) return;
     const q = query(collection(db, 'users', user.uid, 'chats'));
@@ -394,7 +394,6 @@ export default function App() {
           sysPrompt = `You are a custom AI Persona named ${selectedAI.name}. PERSONALITY: ${selectedAI.personality}`;
         }
 
-        // Convert chat history to OpenAI format
         const formattedHistory = (messages || [])
           .filter(m => m && typeof m.text === 'string' && m.text.trim() !== '')
           .slice(-10)
@@ -409,16 +408,16 @@ export default function App() {
           { role: 'user', content: userText }
         ];
 
-        // Direct fetch to OpenAI API with explicit CORS mode
+        // Refactored clean request headers to avoid mobile preflight 405 blocks
+        const headers = new Headers();
+        headers.append("Content-Type", "application/json");
+        headers.append("Authorization", `Bearer ${activeKey}`);
+
         const data = await fetchWithRetry(
           '[https://api.openai.com/v1/chat/completions](https://api.openai.com/v1/chat/completions)',
           {
             method: 'POST',
-            mode: 'cors',
-            headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${activeKey}`
-            },
+            headers: headers,
             body: JSON.stringify({
               model: 'gpt-5.6-terra',
               messages: requestMessages
