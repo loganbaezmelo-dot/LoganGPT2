@@ -39,7 +39,7 @@ const LOCAL_BRAIN = [
   }
 ];
 
-const SYSTEM_PROMPT_STANDARD = "You are LoganGPT, an elite enterprise AI running on GPT-5.6-Terra. Format responses clearly using Markdown.";
+const SYSTEM_PROMPT_STANDARD = "You are LoganGPT, an elite enterprise AI powered by GPT-5.6-Terra. Format responses clearly using Markdown.";
 const SYSTEM_PROMPT_CANVAS = "You are LoganGPT Canvas running on GPT-5.6-Terra. Your goal is to build functional web applications based on user requests. OUTPUT RULES: 1. Provide a SINGLE, SELF-CONTAINED HTML file inside a markdown code block (```html ... ```). 2. Include all CSS (in <style>) and JS (in <script>) within that file. 3. Make the design modern, clean, and responsive. 4. Do not explain the code excessively, just build it. 5. If the user asks for a game or tool, make it playable/usable immediately.";
 
 // --- RETRY FETCH HELPER ---
@@ -408,17 +408,16 @@ export default function App() {
           { role: 'user', content: userText }
         ];
 
-        // Refactored clean request headers to avoid mobile preflight 405 blocks
-        const headers = new Headers();
-        headers.append("Content-Type", "application/json");
-        headers.append("Authorization", `Bearer ${activeKey}`);
-
+        // Call the serverless backend function to bypass browser CORS / preflight 405 blocks
         const data = await fetchWithRetry(
-          '[https://api.openai.com/v1/chat/completions](https://api.openai.com/v1/chat/completions)',
+          '/api/chat',
           {
             method: 'POST',
-            headers: headers,
+            headers: { 
+              'Content-Type': 'application/json'
+            },
             body: JSON.stringify({
+              apiKey: activeKey,
               model: 'gpt-5.6-terra',
               messages: requestMessages
             })
@@ -426,7 +425,7 @@ export default function App() {
         );
 
         if (data.error) {
-          throw new Error(`OpenAI API Error: ${data.error.message || JSON.stringify(data.error, null, 2)}`);
+          throw new Error(`API Error: ${data.error.message || JSON.stringify(data.error, null, 2)}`);
         }
 
         replyText = data.choices?.[0]?.message?.content || "No response generated.";
