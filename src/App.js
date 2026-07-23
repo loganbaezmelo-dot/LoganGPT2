@@ -49,7 +49,6 @@ const fetchWithRetry = async (url, options, retries = 2, backoff = 500) => {
     if (!response.ok) {
       let errDetail = '';
       try {
-        // Safely read body ONCE as text to avoid stream locked/already-read errors
         const rawText = await response.text();
         try {
           const errJson = JSON.parse(rawText);
@@ -414,11 +413,9 @@ export default function App() {
           { role: 'user', parts: [{ text: userText }] }
         ];
 
-        // Direct URL target instantiation to prevent Vercel relative path interception
-        const targetUrl = new URL('[https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent](https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent)');
-
+        // Clean direct endpoint fetch
         const data = await fetchWithRetry(
-          targetUrl.href,
+          '[https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent](https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent)',
           {
             method: 'POST',
             mode: 'cors',
