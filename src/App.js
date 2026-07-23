@@ -581,11 +581,11 @@ export default function App() {
           ) : (
             <div className="max-w-3xl mx-auto space-y-6">
               {messages.map((msg, idx) => (
-                <div key={idx} className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                  <div className={`w-9 h-9 rounded-xl flex-shrink-0 flex items-center justify-center text-xs font-bold border border-white/10 shadow-lg ${msg.role === 'user' ? 'bg-slate-800 text-slate-300' : 'text-white'}`} style={msg.role === 'assistant' || msg.role === 'model' ? { backgroundColor: selectedAI ? '#06b6d4' : currentMode === 'creative' ? '#ec4899' : currentMode === 'canvas' ? '#eab308' : theme.color } : {}}>
+                <div key={idx} className={`flex gap-3 sm:gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                  <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex-shrink-0 flex items-center justify-center text-xs font-bold border border-white/10 shadow-lg ${msg.role === 'user' ? 'bg-slate-800 text-slate-300' : 'text-white'}`} style={msg.role === 'assistant' || msg.role === 'model' ? { backgroundColor: selectedAI ? '#06b6d4' : currentMode === 'creative' ? '#ec4899' : currentMode === 'canvas' ? '#eab308' : theme.color } : {}}>
                     {msg.role === 'user' ? <User className="w-4 h-4"/> : (selectedAI ? <Bot className="w-4 h-4"/> : currentMode === 'creative' ? <ImageIcon className="w-4 h-4"/> : currentMode === 'canvas' ? <Layout className="w-4 h-4"/> : <Zap className="w-4 h-4" fill="currentColor"/>)}
                   </div>
-                  <div className={`relative max-w-[85%] rounded-2xl p-4 text-sm leading-7 shadow-md border overflow-hidden min-w-0 ${msg.role === 'user' ? 'bg-slate-800 text-white border-white/5' : 'bg-slate-900/50 text-slate-200 border-white/5'}`}>
+                  <div className={`relative w-full max-w-[88%] sm:max-w-[85%] rounded-2xl p-3.5 sm:p-4 text-sm leading-7 shadow-md border overflow-hidden min-w-0 ${msg.role === 'user' ? 'bg-slate-800 text-white border-white/5' : 'bg-slate-900/50 text-slate-200 border-white/5'}`}>
                     <ReactMarkdown 
                       className="prose prose-invert max-w-none break-words" 
                       remarkPlugins={[remarkGfm]} 
@@ -594,29 +594,31 @@ export default function App() {
                           const match = /language-(\w+)/.exec(className || '');
                           const codeString = String(children).replace(/\n$/, '');
 
-                          // Intercept HTML code block to replace long raw code with interactive canvas widget card
+                          // Intercept HTML code block to render a clean mobile-responsive canvas card
                           if (!inline && match && match[1] === 'html') {
                             return (
-                              <div className="my-3 p-4 bg-slate-950/80 border border-yellow-500/30 rounded-xl flex flex-wrap items-center justify-between gap-3 shadow-lg">
-                                <div className="flex items-center gap-2 text-yellow-400 font-medium text-xs">
-                                  <Layout className="w-4 h-4"/> Interactive Canvas Built
+                              <div className="my-2 p-3 sm:p-4 bg-slate-950/90 border border-yellow-500/40 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg w-full">
+                                <div className="flex items-center gap-2 text-yellow-400 font-semibold text-xs sm:text-sm">
+                                  <Layout className="w-4 h-4 flex-shrink-0"/> 
+                                  <span>Interactive Canvas Built</span>
                                 </div>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 w-full sm:w-auto">
                                   <button 
                                     onClick={() => copyToClipboard(codeString)} 
-                                    className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                                    className="flex-1 sm:flex-none justify-center px-3 py-2 bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
                                   >
                                     {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                                    {copiedCode ? "Copied!" : "Copy Code"}
+                                    <span>{copiedCode ? "Copied!" : "Copy Code"}</span>
                                   </button>
                                   <button 
                                     onClick={() => {
                                       setCanvasCode(codeString);
                                       setIsCanvasPreviewOpen(true);
                                     }} 
-                                    className="px-3 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 transition-colors shadow-md shadow-yellow-500/20"
+                                    className="flex-1 sm:flex-none justify-center px-3 py-2 bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 transition-colors shadow-md shadow-yellow-500/20"
                                   >
-                                    <Play className="w-3.5 h-3.5" fill="currentColor"/> Launch App
+                                    <Play className="w-3.5 h-3.5" fill="currentColor"/> 
+                                    <span>Launch App</span>
                                   </button>
                                 </div>
                               </div>
