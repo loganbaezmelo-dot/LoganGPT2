@@ -42,11 +42,20 @@ const LOCAL_BRAIN = [
 const SYSTEM_PROMPT_STANDARD = "You are LoganGPT. Helpful, professional, and precise. Format responses clearly using Markdown.";
 const SYSTEM_PROMPT_CANVAS = "You are LoganGPT Canvas. Your goal is to build functional web applications based on user requests. OUTPUT RULES: 1. Provide a SINGLE, SELF-CONTAINED HTML file inside a markdown code block (```html ... ```). 2. Include all CSS (in <style>) and JS (in <script>) within that file. 3. Make the design modern, clean, and responsive. 4. Do not explain the code excessively, just build it. 5. If the user asks for a game or tool, make it playable/usable immediately.";
 
-// --- RETRY FETCH HELPER ---
+// --- RETRY FETCH HELPER WITH EXACT ERROR READING ---
 const fetchWithRetry = async (url, options, retries = 2, backoff = 500) => {
   try {
     const response = await fetch(url, options);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.ok) {
+      let errDetail = '';
+      try {
+        const errJson = await response.json();
+        errDetail = JSON.stringify(errJson, null, 2);
+      } catch (e) {
+        errDetail = await response.text();
+      }
+      throw new Error(`HTTP ${response.status} ${response.statusText}\n${errDetail}`);
+    }
     return await response.json();
   } catch (err) {
     if (retries <= 0) throw err;
@@ -399,7 +408,7 @@ export default function App() {
           { role: 'user', parts: [{ text: userText }] }
         ];
 
-        // Clean direct URL endpoint
+        // Clean direct string URL
         const data = await fetchWithRetry(
           '[https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent](https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent)',
           {
@@ -416,7 +425,7 @@ export default function App() {
         );
 
         if (data.error) {
-          throw new Error(data.error?.message || "Google API returned an error.");
+          throw new Error(`Google API Error: ${JSON.stringify(data.error, null, 2)}`);
         }
 
         replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
@@ -429,9 +438,9 @@ export default function App() {
     } catch (err) {
       console.error("Messaging Error:", err);
       
-      const errorDetails = `⚠️ **API Error Details:** ${err.message}`;
+      const exactErrorText = `❌ **Exact Error Message:**\n\`\`\`\n${err.stack || err.message || err}\n\`\`\``;
       const fallbackText = queryLocalBrain(userText);
-      const combinedReply = `${errorDetails}\n\n---\n\n*Falling back to local brain:*\n${fallbackText}`;
+      const combinedReply = `${exactErrorText}\n\n---\n\n*Falling back to local brain:*\n${fallbackText}`;
 
       setMessages((prev) => [...prev, { role: 'model', text: combinedReply, timestamp: new Date() }]);
 
