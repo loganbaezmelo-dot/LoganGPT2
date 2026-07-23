@@ -399,7 +399,7 @@ export default function App() {
           { role: 'user', parts: [{ text: userText }] }
         ];
 
-        // Header-authenticated fetch to prevent CORS / 405 Method Not Allowed blocks
+        // Clean direct URL endpoint
         const data = await fetchWithRetry(
           '[https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent](https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent)',
           {
