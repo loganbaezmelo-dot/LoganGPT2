@@ -42,17 +42,23 @@ const LOCAL_BRAIN = [
 const SYSTEM_PROMPT_STANDARD = "You are LoganGPT. Helpful, professional, and precise. Format responses clearly using Markdown.";
 const SYSTEM_PROMPT_CANVAS = "You are LoganGPT Canvas. Your goal is to build functional web applications based on user requests. OUTPUT RULES: 1. Provide a SINGLE, SELF-CONTAINED HTML file inside a markdown code block (```html ... ```). 2. Include all CSS (in <style>) and JS (in <script>) within that file. 3. Make the design modern, clean, and responsive. 4. Do not explain the code excessively, just build it. 5. If the user asks for a game or tool, make it playable/usable immediately.";
 
-// --- RETRY FETCH HELPER WITH EXACT ERROR READING ---
+// --- RETRY FETCH HELPER WITH SAFE ERROR STREAM READING ---
 const fetchWithRetry = async (url, options, retries = 2, backoff = 500) => {
   try {
     const response = await fetch(url, options);
     if (!response.ok) {
       let errDetail = '';
       try {
-        const errJson = await response.json();
-        errDetail = JSON.stringify(errJson, null, 2);
+        // Safely read body ONCE as text to avoid stream locked/already-read errors
+        const rawText = await response.text();
+        try {
+          const errJson = JSON.parse(rawText);
+          errDetail = JSON.stringify(errJson, null, 2);
+        } catch {
+          errDetail = rawText;
+        }
       } catch (e) {
-        errDetail = await response.text();
+        errDetail = 'Could not read error response body.';
       }
       throw new Error(`HTTP ${response.status} ${response.statusText}\n${errDetail}`);
     }
@@ -438,7 +444,7 @@ export default function App() {
     } catch (err) {
       console.error("Messaging Error:", err);
       
-      const exactErrorText = `❌ **Exact Error Message:**\n\`\`\`\n${err.stack || err.message || err}\n\`\`\``;
+      const exactErrorText = `❌ **Exact Error Message:**\n\`\`\`\n${err.message || err}\n\`\`\``;
       const fallbackText = queryLocalBrain(userText);
       const combinedReply = `${exactErrorText}\n\n---\n\n*Falling back to local brain:*\n${fallbackText}`;
 
