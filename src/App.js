@@ -27,11 +27,11 @@ import {
 const LOCAL_BRAIN = [
   { 
     triggers: ["who are you", "what are you", "your name"], 
-    response: "I am **LoganGPT**, an enterprise-grade AI. I support multi-tier architecture including standard text processing, image generation, and live code prototyping (Canvas Mode)." 
+    response: "I am **LoganGPT**, an enterprise-grade AI powered by **GPT-5.6-Terra**. I support multi-tier architecture including high-reasoning text processing, image generation, and live code prototyping (Canvas Mode)." 
   },
   { 
     triggers: ["tiers", "pricing", "cost", "plans"], 
-    response: "I operate on a tiered model:\n\n* **Standard Tier:** Advanced text processing.\n* **Creative Tier:** Unlocks image generation (Included).\n* **Canvas Tier:** Enables live code prototyping." 
+    response: "I operate on a tiered model:\n\n* **Standard Tier:** Powered by GPT-5.6-Terra.\n* **Creative Tier:** Unlocks image generation (Included).\n* **Canvas Tier:** Enables live code prototyping." 
   },
   { 
     triggers: ["hello", "hi"], 
@@ -39,8 +39,8 @@ const LOCAL_BRAIN = [
   }
 ];
 
-const SYSTEM_PROMPT_STANDARD = "You are LoganGPT. Helpful, professional, and precise. Format responses clearly using Markdown.";
-const SYSTEM_PROMPT_CANVAS = "You are LoganGPT Canvas. Your goal is to build functional web applications based on user requests. OUTPUT RULES: 1. Provide a SINGLE, SELF-CONTAINED HTML file inside a markdown code block (```html ... ```). 2. Include all CSS (in <style>) and JS (in <script>) within that file. 3. Make the design modern, clean, and responsive. 4. Do not explain the code excessively, just build it. 5. If the user asks for a game or tool, make it playable/usable immediately.";
+const SYSTEM_PROMPT_STANDARD = "You are LoganGPT, an elite enterprise AI running on GPT-5.6-Terra. Helpful, professional, extremely intelligent, and precise. Format responses clearly using Markdown.";
+const SYSTEM_PROMPT_CANVAS = "You are LoganGPT Canvas running on GPT-5.6-Terra. Your goal is to build functional web applications based on user requests. OUTPUT RULES: 1. Provide a SINGLE, SELF-CONTAINED HTML file inside a markdown code block (```html ... ```). 2. Include all CSS (in <style>) and JS (in <script>) within that file. 3. Make the design modern, clean, and responsive. 4. Do not explain the code excessively, just build it. 5. If the user asks for a game or tool, make it playable/usable immediately.";
 
 // --- RETRY FETCH HELPER WITH SAFE ERROR STREAM READING ---
 const fetchWithRetry = async (url, options, retries = 2, backoff = 500) => {
@@ -117,7 +117,7 @@ function Login() {
             <Zap className="w-8 h-8" fill="currentColor" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight">Welcome to LoganGPT</h1>
-          <p className="text-slate-400 text-sm mt-2">Enterprise AI Workspace</p>
+          <p className="text-slate-400 text-sm mt-2">Enterprise AI Workspace (GPT-5.6-Terra)</p>
         </div>
 
         {error && (
@@ -187,8 +187,8 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   
-  // Settings & Modes
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
+  // Settings & Modes (Stored key for OpenAI)
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('openai_api_key') || '');
   const [currentMode, setCurrentMode] = useState('standard'); 
   const [selectedAI, setSelectedAI] = useState(null); 
   const [isCreatorOpen, setIsCreatorOpen] = useState(false);
@@ -266,7 +266,7 @@ export default function App() {
       msgs.sort((a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0));
       setMessages(msgs);
       
-      const lastCanvasMsg = [...msgs].reverse().find(m => m.role === 'model' && m.text.includes('```html'));
+      const lastCanvasMsg = [...msgs].reverse().find(m => m.role === 'assistant' && m.text.includes('```html'));
       if (lastCanvasMsg) {
         const match = lastCanvasMsg.text.match(/```html([\s\S]*?)```/);
         if (match && match[1]) {
@@ -357,7 +357,7 @@ export default function App() {
     const optimisticUserMsg = { role: 'user', text: userText, timestamp: new Date() };
     setMessages((prev) => [...prev, optimisticUserMsg]);
 
-    const activeKey = (apiKey || localStorage.getItem('gemini_api_key') || '').trim();
+    const activeKey = (apiKey || localStorage.getItem('openai_api_key') || '').trim();
 
     try {
       if (!currentChatId) {
@@ -394,51 +394,46 @@ export default function App() {
           sysPrompt = `You are a custom AI Persona named ${selectedAI.name}. PERSONALITY: ${selectedAI.personality}`;
         }
 
-        // Convert chat history for Gemini memory context (past 10 turns)
+        // Convert chat history to OpenAI messages format (past 10 turns)
         const formattedHistory = (messages || [])
           .filter(m => m && typeof m.text === 'string' && m.text.trim() !== '')
           .slice(-10)
           .map(m => ({
-            role: m.role === 'model' ? 'model' : 'user',
-            parts: [{ text: m.text }]
+            role: m.role === 'assistant' || m.role === 'model' ? 'assistant' : 'user',
+            content: m.text
           }));
 
-        // Gemini API requires conversation to start with 'user'
-        while (formattedHistory.length > 0 && formattedHistory[0].role === 'model') {
-          formattedHistory.shift();
-        }
-
-        const requestContents = [
+        const requestMessages = [
+          { role: 'system', content: sysPrompt },
           ...formattedHistory,
-          { role: 'user', parts: [{ text: userText }] }
+          { role: 'user', content: userText }
         ];
 
-        // Key passed in URL query param to bypass CORS x-goog-api-key preflight 405 error
-        const targetUrl = `[https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$](https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$){encodeURIComponent(activeKey)}`;
-
+        // Call OpenAI Chat Completions API with GPT-5.6-Terra model
         const data = await fetchWithRetry(
-          targetUrl,
+          '[https://api.openai.com/v1/chat/completions](https://api.openai.com/v1/chat/completions)',
           {
             method: 'POST',
             headers: { 
-              'Content-Type': 'application/json'
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${activeKey}`
             },
             body: JSON.stringify({
-              contents: requestContents,
-              systemInstruction: { parts: [{ text: sysPrompt }] }
+              model: 'gpt-5.6-terra',
+              messages: requestMessages
             })
           }
         );
 
         if (data.error) {
-          throw new Error(`Google API Error: ${JSON.stringify(data.error, null, 2)}`);
+          throw new Error(`OpenAI API Error: ${data.error.message || JSON.stringify(data.error, null, 2)}`);
         }
 
-        replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
+        replyText = data.choices?.[0]?.message?.content || "No response generated.";
       }
 
       await addDoc(collection(db, 'users', user.uid, 'chats', currentChatId, 'messages'), {
-        role: 'model', text: replyText, timestamp: serverTimestamp()
+        role: 'assistant', text: replyText, timestamp: serverTimestamp()
       });
 
     } catch (err) {
@@ -448,11 +443,11 @@ export default function App() {
       const fallbackText = queryLocalBrain(userText);
       const combinedReply = `${exactErrorText}\n\n---\n\n*Falling back to local brain:*\n${fallbackText}`;
 
-      setMessages((prev) => [...prev, { role: 'model', text: combinedReply, timestamp: new Date() }]);
+      setMessages((prev) => [...prev, { role: 'assistant', text: combinedReply, timestamp: new Date() }]);
 
       if (currentChatId) {
         await addDoc(collection(db, 'users', user.uid, 'chats', currentChatId, 'messages'), {
-          role: 'model', text: combinedReply, timestamp: serverTimestamp()
+          role: 'assistant', text: combinedReply, timestamp: serverTimestamp()
         }).catch(e => console.error("Firestore Fallback Error:", e));
       }
     } finally {
@@ -465,16 +460,16 @@ export default function App() {
     for (const entry of LOCAL_BRAIN) {
       if (entry.triggers.some(t => lowerInput.includes(t))) return entry.response;
     }
-    return "I am currently operating in **Offline Mode**. Please enter a valid Gemini API key in Settings to unlock dynamic responses.";
+    return "I am currently operating in **Offline Mode**. Please enter a valid OpenAI API key in Settings to unlock dynamic responses with GPT-5.6-Terra.";
   };
 
   const saveSettings = () => {
     const trimmed = apiKey.trim();
     if (trimmed) {
-      localStorage.setItem('gemini_api_key', trimmed);
+      localStorage.setItem('openai_api_key', trimmed);
       setApiKey(trimmed);
     } else {
-      localStorage.removeItem('gemini_api_key');
+      localStorage.removeItem('openai_api_key');
       setApiKey('');
     }
     localStorage.setItem('logan_theme', JSON.stringify(theme));
@@ -540,7 +535,7 @@ export default function App() {
             <div className="flex items-center gap-2">
               <span className="font-bold text-lg tracking-tight text-white">LoganGPT</span>
               <div className="hidden sm:flex items-center gap-2">
-                {selectedAI ? <span className="flex items-center gap-1 text-[10px] bg-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded-full border border-cyan-500/30 font-bold tracking-wide"><Bot className="w-3 h-3" /> {selectedAI.name.toUpperCase()}</span> : currentMode === 'creative' ? <span className="flex items-center gap-1 text-[10px] bg-pink-500/20 text-pink-400 px-2 py-0.5 rounded-full border border-pink-500/30 font-bold tracking-wide animate-pulse"><Paintbrush className="w-3 h-3" /> CREATIVE</span> : currentMode === 'canvas' ? <span className="flex items-center gap-1 text-[10px] bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full border border-yellow-500/30 font-bold tracking-wide animate-pulse"><Layout className="w-3 h-3" /> CANVAS</span> : !apiKey ? <span className="flex items-center gap-1 text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded border border-white/5"><WifiOff className="w-3 h-3" /> Offline</span> : <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/20">PRO</span>}
+                {selectedAI ? <span className="flex items-center gap-1 text-[10px] bg-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded-full border border-cyan-500/30 font-bold tracking-wide"><Bot className="w-3 h-3" /> {selectedAI.name.toUpperCase()}</span> : currentMode === 'creative' ? <span className="flex items-center gap-1 text-[10px] bg-pink-500/20 text-pink-400 px-2 py-0.5 rounded-full border border-pink-500/30 font-bold tracking-wide animate-pulse"><Paintbrush className="w-3 h-3" /> CREATIVE</span> : currentMode === 'canvas' ? <span className="flex items-center gap-1 text-[10px] bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full border border-yellow-500/30 font-bold tracking-wide animate-pulse"><Layout className="w-3 h-3" /> CANVAS</span> : !apiKey ? <span className="flex items-center gap-1 text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded border border-white/5"><WifiOff className="w-3 h-3" /> Offline</span> : <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/20">GPT-5.6-TERRA</span>}
               </div>
             </div>
           </div>
@@ -560,14 +555,14 @@ export default function App() {
                   {selectedAI ? <Bot className="w-10 h-10 text-cyan-400" /> : currentMode === 'creative' ? <Paintbrush className="w-10 h-10 text-pink-400" /> : currentMode === 'canvas' ? <Layout className="w-10 h-10 text-yellow-400" /> : <Monitor className="w-10 h-10" style={{ color: theme.color }} />}
                 </div>
               </div>
-              <div><h2 className="text-3xl font-bold text-white mb-2">{selectedAI ? `Talking to ${selectedAI.name}.` : currentMode === 'creative' ? "Creative Mode Active." : currentMode === 'canvas' ? "Canvas Engine Ready." : "System Online."}</h2><p className="text-slate-400">{selectedAI ? (selectedAI.isRoleplay ? "Roleplay Mode Active. Internet disabled." : "Custom Persona Active.") : currentMode === 'creative' ? "Generates images via Pollinations AI." : currentMode === 'canvas' ? "Builds single-file web apps instantly." : (apiKey ? "Connected to Cloud Intelligence." : "Running in Offline Mode.")}</p></div>
+              <div><h2 className="text-3xl font-bold text-white mb-2">{selectedAI ? `Talking to ${selectedAI.name}.` : currentMode === 'creative' ? "Creative Mode Active." : currentMode === 'canvas' ? "Canvas Engine Ready." : "System Online."}</h2><p className="text-slate-400">{selectedAI ? (selectedAI.isRoleplay ? "Roleplay Mode Active. Internet disabled." : "Custom Persona Active.") : currentMode === 'creative' ? "Generates images via Pollinations AI." : currentMode === 'canvas' ? "Builds single-file web apps instantly." : (apiKey ? "Connected to Cloud Intelligence (GPT-5.6-Terra)." : "Running in Offline Mode.")}</p></div>
             </div>
           ) : (
             <div className="max-w-3xl mx-auto space-y-6">
               {messages.map((msg, idx) => (
                 <div key={idx} className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                  <div className={`w-9 h-9 rounded-xl flex-shrink-0 flex items-center justify-center text-xs font-bold border border-white/10 shadow-lg ${msg.role === 'user' ? 'bg-slate-800 text-slate-300' : 'text-white'}`} style={msg.role === 'model' ? { backgroundColor: selectedAI && msg.role === 'model' ? '#06b6d4' : currentMode === 'creative' && msg.role === 'model' ? '#ec4899' : currentMode === 'canvas' && msg.role === 'model' ? '#eab308' : theme.color } : {}}>
-                    {msg.role === 'user' ? <User className="w-4 h-4"/> : (selectedAI ? <Bot className="w-4 h-4"/> : currentMode === 'creative' && msg.role === 'model' ? <ImageIcon className="w-4 h-4"/> : currentMode === 'canvas' && msg.role === 'model' ? <Layout className="w-4 h-4"/> : <Zap className="w-4 h-4" fill="currentColor"/>)}
+                  <div className={`w-9 h-9 rounded-xl flex-shrink-0 flex items-center justify-center text-xs font-bold border border-white/10 shadow-lg ${msg.role === 'user' ? 'bg-slate-800 text-slate-300' : 'text-white'}`} style={msg.role === 'assistant' || msg.role === 'model' ? { backgroundColor: selectedAI ? '#06b6d4' : currentMode === 'creative' ? '#ec4899' : currentMode === 'canvas' ? '#eab308' : theme.color } : {}}>
+                    {msg.role === 'user' ? <User className="w-4 h-4"/> : (selectedAI ? <Bot className="w-4 h-4"/> : currentMode === 'creative' ? <ImageIcon className="w-4 h-4"/> : currentMode === 'canvas' ? <Layout className="w-4 h-4"/> : <Zap className="w-4 h-4" fill="currentColor"/>)}
                   </div>
                   <div className={`relative max-w-[85%] rounded-2xl p-4 text-sm leading-7 shadow-md border overflow-hidden min-w-0 ${msg.role === 'user' ? 'bg-slate-800 text-white border-white/5' : 'bg-slate-900/50 text-slate-200 border-white/5'}`}>
                     <ReactMarkdown 
@@ -583,7 +578,7 @@ export default function App() {
                     </ReactMarkdown>
 
                     {/* Canvas Trigger Bar */}
-                    {msg.role === 'model' && msg.text.includes('```html') && (
+                    {(msg.role === 'assistant' || msg.role === 'model') && msg.text.includes('```html') && (
                       <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">
                         <span className="text-xs text-yellow-400 font-medium flex items-center gap-1.5"><Layout className="w-3.5 h-3.5"/> Interactive Canvas Built</span>
                         <button onClick={() => setIsCanvasPreviewOpen(true)} className="px-3 py-1 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 border border-yellow-500/40 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors">
@@ -600,7 +595,7 @@ export default function App() {
                     <Zap className="w-4 h-4" fill="currentColor"/>
                   </div>
                   <div className="bg-slate-900/50 rounded-2xl p-4 text-xs text-slate-400 border border-white/5 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-slate-500 animate-ping" /> Generating response...
+                    <span className="w-2 h-2 rounded-full bg-slate-500 animate-ping" /> Generating response with GPT-5.6-Terra...
                   </div>
                 </div>
               )}
@@ -692,14 +687,14 @@ export default function App() {
             <div className="space-y-6">
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Gemini API Key</label>
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">OpenAI API Key</label>
                   <a 
-                    href="https://aistudio.google.com/app/apikey" 
+                    href="https://platform.openai.com/api-keys" 
                     target="_blank" 
                     rel="noopener noreferrer" 
                     className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1 transition-colors font-medium"
                   >
-                    Get API Key <ExternalLink className="w-3 h-3"/>
+                    Get OpenAI Key <ExternalLink className="w-3 h-3"/>
                   </a>
                 </div>
                 <div className="relative">
@@ -708,11 +703,13 @@ export default function App() {
                     type="password" 
                     value={apiKey} 
                     onChange={(e) => setApiKey(e.target.value)} 
-                    placeholder="AIzaSy..." 
+                    placeholder="sk-proj-..." 
                     className="w-full bg-slate-950 border border-white/10 rounded-xl py-3 pl-9 pr-4 text-sm text-white focus:outline-none focus:border-violet-500" 
                   />
                 </div>
-                <p className="text-[11px] text-slate-500 mt-1.5">Get a free key from Google AI Studio. Leave blank to use local brain mode.</p>
+                <p className="text-[11px] text-slate-500 mt-1.5">
+                  Get your key from <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-violet-400 underline">OpenAI Platform</a>. Leave blank to use local brain mode.
+                </p>
               </div>
 
               <div>
