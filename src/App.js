@@ -260,6 +260,21 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
+  // Synchronize persona state when opening a chat from history
+  useEffect(() => {
+    if (!activeChatId || chats.length === 0) return;
+    const activeChat = chats.find(c => c.id === activeChatId);
+    if (activeChat && activeChat.aiId && activeChat.aiId !== 'logan-default') {
+      const matchingAI = customAIs.find(ai => ai.id === activeChat.aiId);
+      if (matchingAI) {
+        setSelectedAI(matchingAI);
+        setCurrentMode('standard');
+      }
+    } else if (activeChat && (!activeChat.aiId || activeChat.aiId === 'logan-default')) {
+      setSelectedAI(null);
+    }
+  }, [activeChatId, chats, customAIs]);
+
   // Fetch Messages & Scan for Canvas Code
   useEffect(() => {
     if (!user || !activeChatId) {
@@ -335,6 +350,7 @@ export default function App() {
     if (activeChatId === chatId) {
       setActiveChatId(null);
       setMessages([]);
+      setSelectedAI(null);
     }
   };
 
