@@ -414,11 +414,14 @@ export default function App() {
           { role: 'user', parts: [{ text: userText }] }
         ];
 
-        // Clean direct string URL
+        // Direct URL target instantiation to prevent Vercel relative path interception
+        const targetUrl = new URL('[https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent](https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent)');
+
         const data = await fetchWithRetry(
-          '[https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent](https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent)',
+          targetUrl.href,
           {
             method: 'POST',
+            mode: 'cors',
             headers: { 
               'Content-Type': 'application/json',
               'x-goog-api-key': activeKey 
