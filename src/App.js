@@ -27,11 +27,11 @@ import {
 const LOCAL_BRAIN = [
   { 
     triggers: ["who are you", "what are you", "your name"], 
-    response: "I am **LoganGPT**, an enterprise-grade AI powered by **GPT-5.6-Terra**. I support multi-tier architecture including high-reasoning text processing, image generation, and live code prototyping (Canvas Mode)." 
+    response: "I am **LoganGPT**, powered by **GPT-5.6-Terra**. I support advanced text processing, image generation, and live code prototyping (Canvas Mode)." 
   },
   { 
     triggers: ["tiers", "pricing", "cost", "plans"], 
-    response: "I operate on a tiered model:\n\n* **Standard Tier:** Powered by GPT-5.6-Terra.\n* **Creative Tier:** Unlocks image generation (Included).\n* **Canvas Tier:** Enables live code prototyping." 
+    response: "I operate on a tiered model:\n\n* **Standard Tier:** High-reasoning text powered by GPT-5.6-Terra.\n* **Creative Tier:** Unlocks image generation (Included).\n* **Canvas Tier:** Enables live code prototyping." 
   },
   { 
     triggers: ["hello", "hi"], 
@@ -39,7 +39,7 @@ const LOCAL_BRAIN = [
   }
 ];
 
-const SYSTEM_PROMPT_STANDARD = "You are LoganGPT, an elite enterprise AI running on GPT-5.6-Terra. Helpful, professional, extremely intelligent, and precise. Format responses clearly using Markdown.";
+const SYSTEM_PROMPT_STANDARD = "You are LoganGPT, an elite enterprise AI powered by GPT-5.6-Terra. Format responses clearly using Markdown.";
 const SYSTEM_PROMPT_CANVAS = "You are LoganGPT Canvas running on GPT-5.6-Terra. Your goal is to build functional web applications based on user requests. OUTPUT RULES: 1. Provide a SINGLE, SELF-CONTAINED HTML file inside a markdown code block (```html ... ```). 2. Include all CSS (in <style>) and JS (in <script>) within that file. 3. Make the design modern, clean, and responsive. 4. Do not explain the code excessively, just build it. 5. If the user asks for a game or tool, make it playable/usable immediately.";
 
 // --- RETRY FETCH HELPER WITH SAFE ERROR STREAM READING ---
@@ -394,7 +394,7 @@ export default function App() {
           sysPrompt = `You are a custom AI Persona named ${selectedAI.name}. PERSONALITY: ${selectedAI.personality}`;
         }
 
-        // Convert chat history to OpenAI messages format (past 10 turns)
+        // Convert chat history to OpenAI format (past 10 turns)
         const formattedHistory = (messages || [])
           .filter(m => m && typeof m.text === 'string' && m.text.trim() !== '')
           .slice(-10)
@@ -409,7 +409,7 @@ export default function App() {
           { role: 'user', content: userText }
         ];
 
-        // Call OpenAI Chat Completions API with GPT-5.6-Terra model
+        // Call OpenAI Chat Completions API with GPT-5.6-Terra
         const data = await fetchWithRetry(
           '[https://api.openai.com/v1/chat/completions](https://api.openai.com/v1/chat/completions)',
           {
