@@ -324,7 +324,7 @@ export default function App() {
   const deleteChat = async (e, chatId) => {
     e.stopPropagation();
     if (!user) return;
-    await deleteDoc(doc(doc.db, 'users', user.uid, 'chats', chatId));
+    await deleteDoc(doc(db, 'users', user.uid, 'chats', chatId));
     if (activeChatId === chatId) {
       setActiveChatId(null);
       setMessages([]);
@@ -413,9 +413,9 @@ export default function App() {
           { role: 'user', parts: [{ text: userText }] }
         ];
 
-        // Clean URL construction with base fallback
+        // Valid model route target
         const targetUrl = new URL(
-          '[https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent](https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent)',
+          '[https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent](https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent)',
           window.location.origin
         );
 
