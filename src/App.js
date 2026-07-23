@@ -3,7 +3,8 @@ import {
   Menu, X, Send, Settings, Plus, 
   Trash2, Monitor, Zap, Cloud, LogOut, Mail, Lock, 
   Key, User, WifiOff, Image as ImageIcon, ExternalLink,
-  Paintbrush, Layout, Play, Bot, ToggleLeft, ToggleRight
+  Paintbrush, Layout, Play, Bot, ToggleLeft, ToggleRight,
+  Copy, Check
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -218,6 +219,7 @@ export default function App() {
   // Canvas State
   const [canvasCode, setCanvasCode] = useState(null);
   const [isCanvasPreviewOpen, setIsCanvasPreviewOpen] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
 
   const chatContainerRef = useRef(null);
 
@@ -479,6 +481,12 @@ export default function App() {
     setIsSettingsOpen(false);
   };
 
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
+  };
+
   const getAccentColor = () => {
     if (currentMode === 'creative') return '#ec4899';
     if (currentMode === 'canvas') return '#eab308';
@@ -582,23 +590,56 @@ export default function App() {
                       className="prose prose-invert max-w-none break-words" 
                       remarkPlugins={[remarkGfm]} 
                       components={{ 
-                        pre: ({node, ...props}) => <div className="w-full overflow-x-auto my-2 rounded-lg border border-white/10"><pre {...props} className="p-3 bg-black/30 min-w-full" /></div>, 
-                        code: ({node, inline, className, children, ...props}) => inline ? <code className="bg-white/10 rounded px-1 py-0.5 text-xs font-mono break-all" {...props}>{children}</code> : <code className="font-mono text-xs block whitespace-pre" {...props}>{children}</code>, 
+                        code({node, inline, className, children, ...props}) {
+                          const match = /language-(\w+)/.exec(className || '');
+                          const codeString = String(children).replace(/\n$/, '');
+
+                          // Intercept HTML code block to replace long raw code with interactive canvas widget card
+                          if (!inline && match && match[1] === 'html') {
+                            return (
+                              <div className="my-3 p-4 bg-slate-950/80 border border-yellow-500/30 rounded-xl flex flex-wrap items-center justify-between gap-3 shadow-lg">
+                                <div className="flex items-center gap-2 text-yellow-400 font-medium text-xs">
+                                  <Layout className="w-4 h-4"/> Interactive Canvas Built
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button 
+                                    onClick={() => copyToClipboard(codeString)} 
+                                    className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                                  >
+                                    {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                                    {copiedCode ? "Copied!" : "Copy Code"}
+                                  </button>
+                                  <button 
+                                    onClick={() => {
+                                      setCanvasCode(codeString);
+                                      setIsCanvasPreviewOpen(true);
+                                    }} 
+                                    className="px-3 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 transition-colors shadow-md shadow-yellow-500/20"
+                                  >
+                                    <Play className="w-3.5 h-3.5" fill="currentColor"/> Launch App
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          return inline ? (
+                            <code className="bg-white/10 rounded px-1 py-0.5 text-xs font-mono break-all" {...props}>
+                              {children}
+                            </code>
+                          ) : (
+                            <div className="w-full overflow-x-auto my-2 rounded-lg border border-white/10">
+                              <pre className="p-3 bg-black/30 min-w-full font-mono text-xs">
+                                <code className={className} {...props}>{children}</code>
+                              </pre>
+                            </div>
+                          );
+                        },
                         img: ({node, ...props}) => <img {...props} className="rounded-lg shadow-lg max-w-full h-auto border border-white/10 mt-2 mb-2" alt="Generated" /> 
                       }}
                     >
                       {msg.text}
                     </ReactMarkdown>
-
-                    {/* Canvas Trigger Bar */}
-                    {(msg.role === 'assistant' || msg.role === 'model') && msg.text.includes('```html') && (
-                      <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">
-                        <span className="text-xs text-yellow-400 font-medium flex items-center gap-1.5"><Layout className="w-3.5 h-3.5"/> Interactive Canvas Built</span>
-                        <button onClick={() => setIsCanvasPreviewOpen(true)} className="px-3 py-1 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 border border-yellow-500/40 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors">
-                          <Play className="w-3 h-3" fill="currentColor"/> Launch App
-                        </button>
-                      </div>
-                    )}
                   </div>
                 </div>
               ))}
@@ -723,7 +764,7 @@ export default function App() {
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">OpenAI API Key</label>
                     <a 
-                      href="https://platform.openai.com/api-keys" 
+                      href="[https://platform.openai.com/api-keys](https://platform.openai.com/api-keys)" 
                       target="_blank" 
                       rel="noopener noreferrer" 
                       className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1 transition-colors font-medium"
@@ -750,7 +791,7 @@ export default function App() {
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Google Gemini API Key</label>
                     <a 
-                      href="https://aistudio.google.com/app/apikey" 
+                      href="[https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)" 
                       target="_blank" 
                       rel="noopener noreferrer" 
                       className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors font-medium"
