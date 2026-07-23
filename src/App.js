@@ -413,20 +413,15 @@ export default function App() {
           { role: 'user', parts: [{ text: userText }] }
         ];
 
-        // Valid model route target
-        const targetUrl = new URL(
-          '[https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent](https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent)',
-          window.location.origin
-        );
+        // Key passed in URL query param to bypass CORS x-goog-api-key preflight 405 error
+        const targetUrl = `[https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$](https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$){encodeURIComponent(activeKey)}`;
 
         const data = await fetchWithRetry(
-          targetUrl.href,
+          targetUrl,
           {
             method: 'POST',
-            mode: 'cors',
             headers: { 
-              'Content-Type': 'application/json',
-              'x-goog-api-key': activeKey 
+              'Content-Type': 'application/json'
             },
             body: JSON.stringify({
               contents: requestContents,
