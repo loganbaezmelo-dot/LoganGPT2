@@ -10,6 +10,15 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'API key is required.' });
   }
 
+  // Inject current real-world date dynamically into the system instructions
+  const currentDate = new Date().toLocaleDateString('en-US', { 
+    weekday: 'long', 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric' 
+  });
+  const fullSystemPrompt = `${systemPrompt || ''}\n\nCURRENT REAL-WORLD DATE: ${currentDate}`;
+
   try {
     if (provider === 'google') {
       const activeModel = model || 'gemini-2.5-flash';
@@ -31,7 +40,7 @@ export default async function handler(req, res) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: formattedContents,
-          systemInstruction: systemPrompt ? { parts: [{ text: systemPrompt }] } : undefined
+          systemInstruction: { parts: [{ text: fullSystemPrompt }] }
         })
       });
 
@@ -46,9 +55,10 @@ export default async function handler(req, res) {
     } else {
       // Default: OpenAI Provider
       const activeModel = model || 'gpt-4o-mini';
-      const requestMessages = systemPrompt 
-        ? [{ role: 'system', content: systemPrompt }, ...messages] 
-        : messages;
+      const requestMessages = [
+        { role: 'system', content: fullSystemPrompt },
+        ...messages
+      ];
 
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
