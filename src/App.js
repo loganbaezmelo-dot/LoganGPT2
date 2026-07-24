@@ -12,7 +12,7 @@ import remarkGfm from 'remark-gfm';
 // Firebase Imports
 import { db, auth } from './firebase';
 import { 
-  collection, addDoc, query, orderBy, onSnapshot, 
+  collection, addDoc, query, onSnapshot, 
   deleteDoc, doc, updateDoc, serverTimestamp 
 } from 'firebase/firestore';
 import { 
@@ -244,7 +244,7 @@ export default function App() {
     const q = query(collection(db, 'users', user.uid, 'chats'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const loadedChats = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      loadedChats.sort((a, b) => (b.timestamp?.seconds || Date.now()) - (a.timestamp?.seconds || Date.now()));
+      loadedChats.sort((a, b) => (b.timestamp?.seconds || Date.now() / 1000) - (a.timestamp?.seconds || Date.now() / 1000));
       setChats(loadedChats);
     }, (err) => console.error("Chats Listener Error:", err));
     return () => unsubscribe();
@@ -275,7 +275,7 @@ export default function App() {
     }
   }, [activeChatId, chats, customAIs]);
 
-  // Fetch Messages & Scan for Canvas Code
+  // Fetch Messages (with race-condition protection)
   useEffect(() => {
     if (!user || !activeChatId) {
       setMessages([]);
@@ -284,11 +284,17 @@ export default function App() {
     }
     const q = query(collection(db, 'users', user.uid, 'chats', activeChatId, 'messages'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map(doc => doc.data());
-      msgs.sort((a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0));
-      setMessages(msgs);
+      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      const lastCanvasMsg = [...msgs].reverse().find(m => (m.role === 'assistant' || m.role === 'model') && m.text.includes('```html'));
+      // Fallback timestamp logic to keep pending messages visible without resetting the screen
+      const now = Date.now() / 1000;
+      msgs.sort((a, b) => (a.timestamp?.seconds || now) - (b.timestamp?.seconds || now));
+
+      if (msgs.length > 0) {
+        setMessages(msgs);
+      }
+
+      const lastCanvasMsg = [...msgs].reverse().find(m => (m.role === 'assistant' || m.role === 'model') && m.text && m.text.includes('```html'));
       if (lastCanvasMsg) {
         const match = lastCanvasMsg.text.match(/```html([\s\S]*?)```/);
         if (match && match[1]) {
@@ -296,6 +302,7 @@ export default function App() {
         }
       }
     }, (err) => console.error("Messages Listener Error:", err));
+
     return () => unsubscribe();
   }, [user, activeChatId]);
 
@@ -376,7 +383,8 @@ export default function App() {
 
     let currentChatId = activeChatId;
 
-    const optimisticUserMsg = { role: 'user', text: userText, timestamp: new Date() };
+    // Optimistic message update
+    const optimisticUserMsg = { id: `opt-user-${Date.now()}`, role: 'user', text: userText, timestamp: { seconds: Date.now() / 1000 } };
     setMessages((prev) => [...prev, optimisticUserMsg]);
 
     const currentKey = activeKey.trim();
@@ -458,7 +466,7 @@ export default function App() {
       const fallbackText = queryLocalBrain(userText);
       const combinedReply = `${exactErrorText}\n\n---\n\n*Falling back to local brain:*\n${fallbackText}`;
 
-      setMessages((prev) => [...prev, { role: 'assistant', text: combinedReply, timestamp: new Date() }]);
+      setMessages((prev) => [...prev, { id: `opt-err-${Date.now()}`, role: 'assistant', text: combinedReply, timestamp: { seconds: Date.now() / 1000 } }]);
 
       if (currentChatId) {
         await addDoc(collection(db, 'users', user.uid, 'chats', currentChatId, 'messages'), {
@@ -597,7 +605,7 @@ export default function App() {
           ) : (
             <div className="max-w-3xl mx-auto space-y-6">
               {messages.map((msg, idx) => (
-                <div key={idx} className={`flex gap-3 sm:gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                <div key={msg.id || idx} className={`flex gap-3 sm:gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
                   <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex-shrink-0 flex items-center justify-center text-xs font-bold border border-white/10 shadow-lg ${msg.role === 'user' ? 'bg-slate-800 text-slate-300' : 'text-white'}`} style={msg.role === 'assistant' || msg.role === 'model' ? { backgroundColor: selectedAI ? '#06b6d4' : currentMode === 'creative' ? '#ec4899' : currentMode === 'canvas' ? '#eab308' : theme.color } : {}}>
                     {msg.role === 'user' ? <User className="w-4 h-4"/> : (selectedAI ? <Bot className="w-4 h-4"/> : currentMode === 'creative' ? <ImageIcon className="w-4 h-4"/> : currentMode === 'canvas' ? <Layout className="w-4 h-4"/> : <Zap className="w-4 h-4" fill="currentColor"/>)}
                   </div>
@@ -610,7 +618,6 @@ export default function App() {
                           const match = /language-(\w+)/.exec(className || '');
                           const codeString = String(children).replace(/\n$/, '');
 
-                          // Intercept HTML code block to render a clean mobile-responsive canvas card
                           if (!inline && match && match[1] === 'html') {
                             return (
                               <div className="my-2 p-3 sm:p-4 bg-slate-950/90 border border-yellow-500/40 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg w-full">
