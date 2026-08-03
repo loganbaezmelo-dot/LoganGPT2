@@ -381,18 +381,20 @@ export default function App() {
     setInput('');
     setIsLoading(true);
 
-    // Simple client-side timezone detection heuristic if user mentions timezone
+    let effectiveTimeZone = timeZone;
+
     const tzMatches = {
-      'est': 'America/New_York', 'eastern': 'America/New_York', 'ny': 'America/New_York', 'new york': 'America/New_York',
-      'cst': 'America/Chicago', 'central': 'America/Chicago',
-      'mst': 'America/Denver', 'mountain': 'America/Denver',
-      'pst': 'America/Los_Angeles', 'pacific': 'America/Los_Angeles',
+      'est': 'America/New_York', 'edt': 'America/New_York', 'eastern': 'America/New_York', 'ny': 'America/New_York', 'new york': 'America/New_York',
+      'cst': 'America/Chicago', 'cdt': 'America/Chicago', 'central': 'America/Chicago',
+      'mst': 'America/Denver', 'mdt': 'America/Denver', 'mountain': 'America/Denver',
+      'pst': 'America/Los_Angeles', 'pdt': 'America/Los_Angeles', 'pacific': 'America/Los_Angeles',
       'gmt': 'Europe/London', 'bst': 'Europe/London', 'london': 'Europe/London'
     };
     
     const lowerText = userText.toLowerCase();
     for (const [keyword, tz] of Object.entries(tzMatches)) {
-      if (lowerText.includes(`timezone is ${keyword}`) || lowerText.includes(`use ${keyword}`) || lowerText.includes(`i am in ${keyword}`) || lowerText.includes(`i live in ${keyword}`)) {
+      if (lowerText.includes(`timezone is ${keyword}`) || lowerText.includes(`use ${keyword}`) || lowerText.includes(`i am in ${keyword}`) || lowerText.includes(`i live in ${keyword}`) || lowerText === `i use ${keyword}`) {
+        effectiveTimeZone = tz;
         setTimeZone(tz);
         localStorage.setItem('user_timezone', tz);
         break;
@@ -465,7 +467,7 @@ export default function App() {
               model: provider === 'google' ? 'gemini-2.5-flash' : 'gpt-4o-mini',
               messages: requestMessages,
               systemPrompt: sysPrompt,
-              userTimeZone: timeZone
+              userTimeZone: effectiveTimeZone
             })
           }
         );
@@ -813,10 +815,10 @@ export default function App() {
                     className="w-full bg-slate-950 border border-white/10 rounded-xl py-3 pl-9 pr-4 text-sm text-white focus:outline-none focus:border-violet-500"
                   >
                     <option value="UTC">UTC (Default)</option>
-                    <option value="America/New_York">Eastern Time (US / EST)</option>
-                    <option value="America/Chicago">Central Time (US / CST)</option>
-                    <option value="America/Denver">Mountain Time (US / MST)</option>
-                    <option value="America/Los_Angeles">Pacific Time (US / PST)</option>
+                    <option value="America/New_York">Eastern Time (US / EST / EDT)</option>
+                    <option value="America/Chicago">Central Time (US / CST / CDT)</option>
+                    <option value="America/Denver">Mountain Time (US / MST / MDT)</option>
+                    <option value="America/Los_Angeles">Pacific Time (US / PST / PDT)</option>
                     <option value="Europe/London">London (GMT / BST)</option>
                   </select>
                 </div>
