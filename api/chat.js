@@ -10,7 +10,8 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'API key is required.' });
     }
 
-    const modelName = model || (provider === 'google' ? 'gemini-1.5-flash' : 'gpt-4o-mini');
+    // Updated model strings to active non-deprecated models
+    const modelName = model || (provider === 'google' ? 'gemini-3.6-flash' : 'gpt-5.6-luna');
     const targetTimeZone = userTimeZone || 'America/New_York';
 
     let formattedTimeStr = '';
@@ -43,7 +44,6 @@ export default async function handler(req, res) {
         parts: [{ text: m.content || '' }]
       }));
 
-      // 🌐 Added tools: [{ google_search: {} }] for native real-time web browsing!
       const payload = {
         systemInstruction: {
           parts: [{ text: combinedSystemPrompt }]
