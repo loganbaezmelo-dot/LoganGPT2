@@ -8,6 +8,9 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 
 // Firebase Imports
 import { db, auth } from './firebase';
@@ -40,7 +43,15 @@ const LOCAL_BRAIN = [
   }
 ];
 
-const SYSTEM_PROMPT_STANDARD = "You are LoganGPT, an enterprise AI workspace. Format responses clearly using Markdown. CAPABILITIES: You CAN generate images! If a user asks you to generate, make, or draw an image, inform them they can toggle Creative Mode (the image icon in the top header) or you can output images inline directly using Markdown format: `![description](https://image.pollinations.ai/prompt/URL_ENCODED_PROMPT?width=800&height=600&nologo=true)`.";
+// System prompt instructing the AI on capabilities, Markdown, arrows, LaTeX, and code formatting
+const SYSTEM_PROMPT_STANDARD = `You are LoganGPT, an enterprise AI workspace. Format responses clearly using valid Markdown and LaTeX when appropriate.
+
+STRICT FORMATTING & CAPABILITIES INSTRUCTIONS:
+1. ARROWS & SYMBOLS: Prefer standard Unicode arrows (->, ←, →, ↔, ⇒) for simple text chains or process flows. Use LaTeX inline math tags (e.g. $\\rightarrow$, $x^2 + y^2 = z^2$) ONLY for formal math or science equations.
+2. TABLES & LISTS: Feel free to use standard Markdown tables and bulleted lists. They will be rendered cleanly in scrollable containers.
+3. CODE BLOCKS: Always format code snippets using triple backticks with the language specified (e.g., \`\`\`js or \`\`\`html).
+4. IMAGE GENERATION: You CAN generate images! If asked to create, draw, or make an image, inform the user they can toggle Creative Mode or output images inline directly using Markdown format: \`![description](https://image.pollinations.ai/prompt/URL_ENCODED_PROMPT?width=800&height=600&nologo=true)\`.`;
+
 const SYSTEM_PROMPT_CANVAS = "You are LoganGPT Canvas. Your goal is to build functional web applications based on user requests. OUTPUT RULES: 1. Provide a SINGLE, SELF-CONTAINED HTML file inside a markdown code block (```html ... ```). 2. Include all CSS (in <style>) and JS (in <script>) within that file. 3. Make the design modern, clean, and responsive. 4. Do not explain the code excessively, just build it. 5. If the user asks for a game or tool, make it playable/usable immediately.";
 
 // --- RETRY FETCH HELPER ---
@@ -682,8 +693,24 @@ export default function App() {
                   <div className={`relative w-full max-w-[88%] sm:max-w-[85%] rounded-2xl p-3.5 sm:p-4 text-sm leading-7 shadow-md border overflow-hidden min-w-0 ${msg.role === 'user' ? 'bg-slate-800 text-white border-white/5' : 'bg-slate-900/50 text-slate-200 border-white/5'}`}>
                     <ReactMarkdown 
                       className="prose prose-invert max-w-none break-words" 
-                      remarkPlugins={[remarkGfm]} 
+                      remarkPlugins={[remarkGfm, remarkMath]} 
+                      rehypePlugins={[rehypeKatex]}
                       components={{ 
+                        // Scrollable Markdown Tables
+                        table({node, ...props}) {
+                          return (
+                            <div className="w-full overflow-x-auto my-3 rounded-xl border border-white/10">
+                              <table className="w-full text-left border-collapse min-w-[500px]" {...props} />
+                            </div>
+                          );
+                        },
+                        th({node, ...props}) {
+                          return <th className="bg-slate-900 p-2.5 text-xs font-bold text-slate-300 border-b border-white/10" {...props} />;
+                        },
+                        td({node, ...props}) {
+                          return <td className="p-2.5 text-xs border-b border-white/5 text-slate-300" {...props} />;
+                        },
+                        // Code Blocks & Canvas Launcher
                         code({node, inline, className, children, ...props}) {
                           const match = /language-(\w+)/.exec(className || '');
                           const codeString = String(children).replace(/\n$/, '');
@@ -719,11 +746,11 @@ export default function App() {
                           }
 
                           return inline ? (
-                            <code className="bg-white/10 rounded px-1 py-0.5 text-xs font-mono break-all" {...props}>
+                            <code className="bg-white/10 rounded px-1.5 py-0.5 text-xs font-mono break-all" {...props}>
                               {children}
                             </code>
                           ) : (
-                            <div className="w-full overflow-x-auto my-2 rounded-lg border border-white/10">
+                            <div className="w-full overflow-x-auto my-2 rounded-xl border border-white/10">
                               <pre className="p-3 bg-black/30 min-w-full font-mono text-xs">
                                 <code className={className} {...props}>{children}</code>
                               </pre>
@@ -875,60 +902,58 @@ export default function App() {
               </div>
 
               {/* OpenAI Key Input */}
-{provider === 'openai' && (
-  <div>
-    <div className="flex items-center justify-between mb-2">
-      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">OpenAI API Key</label>
-      <a 
-        href="https://platform.openai.com/api-keys" 
-        target="_blank" 
-        rel="noopener noreferrer"
-        className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1 transition-colors font-medium"
-      >
-        Get Key <ExternalLink className="w-3 h-3"/>
-      </a>
-    </div>
-    <div className="relative">
-      <Key className="absolute left-3 top-3.5 w-4 h-4 text-slate-500"/>
-      <input 
-        type="password" 
-        value={openaiKey} 
-        onChange={(e) => setOpenaiKey(e.target.value)} 
-        placeholder="sk-proj-..." 
-        className="w-full bg-slate-950 border border-white/10 rounded-xl py-3 pl-9 pr-4 text-sm text-white focus:outline-none focus:border-violet-500" 
-      />
-    </div>
-  </div>
-)}
- 
+              {provider === 'openai' && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">OpenAI API Key</label>
+                    <a 
+                      href="[https://platform.openai.com/api-keys](https://platform.openai.com/api-keys)" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1 transition-colors font-medium"
+                    >
+                      Get Key <ExternalLink className="w-3 h-3"/>
+                    </a>
+                  </div>
+                  <div className="relative">
+                    <Key className="absolute left-3 top-3.5 w-4 h-4 text-slate-500"/>
+                    <input 
+                      type="password" 
+                      value={openaiKey} 
+                      onChange={(e) => setOpenaiKey(e.target.value)} 
+                      placeholder="sk-proj-..." 
+                      className="w-full bg-slate-950 border border-white/10 rounded-xl py-3 pl-9 pr-4 text-sm text-white focus:outline-none focus:border-violet-500" 
+                    />
+                  </div>
+                </div>
+              )}
 
-{/* Google Gemini Key Input */}
-{provider === 'google' && (
-  <div>
-    <div className="flex items-center justify-between mb-2">
-      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Google Gemini API Key</label>
-      <a 
-        href="https://aistudio.google.com/app/apikey" 
-        target="_blank" 
-        rel="noopener noreferrer"
-        className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors font-medium"
-      >
-        Get Key <ExternalLink className="w-3 h-3"/>
-      </a>
-    </div>
-    <div className="relative">
-      <Key className="absolute left-3 top-3.5 w-4 h-4 text-slate-500"/>
-      <input 
-        type="password" 
-        value={googleKey} 
-        onChange={(e) => setGoogleKey(e.target.value)} 
-        placeholder="AIzaSy..." 
-        className="w-full bg-slate-950 border border-white/10 rounded-xl py-3 pl-9 pr-4 text-sm text-white focus:outline-none focus:border-emerald-500" 
-      />
-    </div>
-  </div>
-)}
-
+              {/* Google Gemini Key Input */}
+              {provider === 'google' && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Google Gemini API Key</label>
+                    <a 
+                      href="[https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors font-medium"
+                    >
+                      Get Key <ExternalLink className="w-3 h-3"/>
+                    </a>
+                  </div>
+                  <div className="relative">
+                    <Key className="absolute left-3 top-3.5 w-4 h-4 text-slate-500"/>
+                    <input 
+                      type="password" 
+                      value={googleKey} 
+                      onChange={(e) => setGoogleKey(e.target.value)} 
+                      placeholder="AIzaSy..." 
+                      className="w-full bg-slate-950 border border-white/10 rounded-xl py-3 pl-9 pr-4 text-sm text-white focus:outline-none focus:border-emerald-500" 
+                    />
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Accent Theme</label>
