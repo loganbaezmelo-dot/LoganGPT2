@@ -10,13 +10,14 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'API key is required.' });
     }
 
-    // 🧗 MODEL FALLBACK LADDERS
-    // Primary models listed first; falls back to robust alternatives if primary fails
+    // 🧗 GOOGLE & OPENAI MODEL FALLBACK LADDERS
     const GEMINI_LADDER = [
       'gemini-3.6-flash',
       'gemini-3.5-flash',
       'gemini-2.5-flash',
-      'gemini-1.5-flash'
+      'gemini-3.5-flash-lite',
+      'gemma-2-27b-it',
+      'gemma-2-9b-it'
     ];
 
     const OPENAI_LADDER = [
@@ -53,10 +54,10 @@ export default async function handler(req, res) {
     let lastError = null;
     let successfulModel = null;
 
-    // --- 🔄 FALLBACK LADDER LOOP ---
+    // --- 🔄 FALLBACK LADDER EXECUTION ---
     for (const currentModel of modelLadder) {
       try {
-        console.log(`[LoganGPT API] Attempting ${provider.toUpperCase()} model: ${currentModel}`);
+        console.log(`[LoganGPT API] Trying ${provider.toUpperCase()} model: ${currentModel}`);
 
         if (provider === 'google') {
           const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`;
@@ -71,7 +72,8 @@ export default async function handler(req, res) {
               parts: [{ text: combinedSystemPrompt }]
             },
             contents: contents,
-            tools: [{ google_search: {} }]
+            // Only add search grounding for standard Gemini models (Gemma models don't support google_search tool)
+            ...(currentModel.startsWith('gemini') ? { tools: [{ google_search: {} }] } : {})
           };
 
           const response = await fetch(endpoint, {
@@ -88,10 +90,10 @@ export default async function handler(req, res) {
 
           replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated.';
           successfulModel = currentModel;
-          break; // Success! Break out of the loop
+          break; // Success! Exit loop
 
         } else {
-          // OpenAI Call
+          // OpenAI Execution
           const endpoint = 'https://api.openai.com/v1/chat/completions';
           
           const formattedMessages = [
@@ -119,16 +121,15 @@ export default async function handler(req, res) {
 
           replyText = data.choices?.[0]?.message?.content || 'No response generated.';
           successfulModel = currentModel;
-          break; // Success! Break out of the loop
+          break; // Success! Exit loop
         }
 
       } catch (err) {
-        console.warn(`[LoganGPT API] Model ${currentModel} failed: ${err.message}. Trying next rung on ladder...`);
+        console.warn(`[LoganGPT API] Model ${currentModel} failed: ${err.message}. Trying next model...`);
         lastError = err.message;
       }
     }
 
-    // If all models in the ladder failed
     if (!successfulModel) {
       return res.status(500).json({ 
         error: `All models in ${provider.toUpperCase()} fallback ladder failed. Last error: ${lastError}` 
