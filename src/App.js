@@ -541,7 +541,7 @@ export default function App() {
             body: JSON.stringify({
               provider: provider,
               apiKey: currentKey,
-              model: provider === 'google' ? 'gemini-3.6-flash' : 'gpt-5.6-luna',
+              model: provider === 'google' ? 'gemini-1.5-flash' : 'gpt-4o-mini',
               messages: requestMessages,
               systemPrompt: sysPrompt,
               userTimeZone: effectiveTimeZone
