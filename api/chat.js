@@ -1,125 +1,108 @@
-// api/chat.js
+import fetch from 'node-fetch';
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { provider, apiKey, messages, model, systemPrompt, userTimeZone } = req.body;
+  const { provider, apiKey, model, messages, systemPrompt, userTimeZone } = req.body;
 
   if (!apiKey) {
     return res.status(400).json({ error: 'API key is required.' });
   }
 
-  // Fallback map for common user inputs to valid IANA timezone identifiers
-  const activeZone = userTimeZone || 'UTC';
+  // Set default models to 2026 specs if none specified
+  const modelName = model || (provider === 'google' ? 'gemini-3.6-flash' : 'gpt-5.6-luna');
 
-  let currentDate = '';
-  let currentTime = '';
-
+  // Format real-time clock context
+  const targetTimeZone = userTimeZone || 'America/New_York';
+  let formattedTimeStr = '';
   try {
-    currentDate = new Date().toLocaleDateString('en-US', { 
-      timeZone: activeZone,
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    });
-
-    currentTime = new Date().toLocaleTimeString('en-US', {
-      timeZone: activeZone,
+    const now = new Date();
+    const dateOptions = {
+      timeZone: targetTimeZone,
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
-    });
+      minute: '2-digit',
+      hour12: true
+    };
+    formattedTimeStr = now.toLocaleString('en-US', dateOptions);
   } catch (e) {
-    // Fallback if invalid timezone string is passed
-    currentDate = new Date().toLocaleDateString('en-US', { 
-      timeZone: 'UTC',
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    });
-
-    currentTime = new Date().toLocaleTimeString('en-US', {
-      timeZone: 'UTC',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    formattedTimeStr = new Date().toISOString();
   }
 
-  // Format label nicely for the AI instruction
-  let zoneLabel = activeZone;
-  if (activeZone === 'America/New_York') zoneLabel = 'Eastern Time (US)';
-  if (activeZone === 'America/Chicago') zoneLabel = 'Central Time (US)';
-  if (activeZone === 'America/Denver') zoneLabel = 'Mountain Time (US)';
-  if (activeZone === 'America/Los_Angeles') zoneLabel = 'Pacific Time (US)';
-
-  // System instruction telling the AI how to handle date, time, and timezone prompts
-  const dateInstruction = activeZone === 'UTC'
-    ? `CURRENT REAL-WORLD DATE & TIME: ${currentDate} at ${currentTime} (UTC).\nNOTE: You are currently using UTC time by default. Whenever the user asks about the date or time, state that you are using UTC and ask what timezone they use so they can customize it.`
-    : `CURRENT REAL-WORLD DATE & TIME: ${currentDate} at ${currentTime} (${zoneLabel}). Note: Use "${zoneLabel}" or the appropriate current daylight/standard abbreviation (e.g. EDT in summer) when reporting the time.`;
-
-  const fullSystemPrompt = `${systemPrompt || ''}\n\n${dateInstruction}`;
+  const timeContext = `[CURRENT REAL-WORLD DATE AND TIME]: ${formattedTimeStr} (${targetTimeZone}). You MUST use this real-time clock whenever asked for current date, time, year, or temporal context.`;
+  const combinedSystemPrompt = systemPrompt ? `${systemPrompt}\n\n${timeContext}` : timeContext;
 
   try {
-    if (provider === 'google') {
-      const activeModel = model || 'gemini-2.5-flash';
-      const targetUrl = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${encodeURIComponent(apiKey.trim())}`;
+    let replyText = '';
 
-      const formattedContents = messages.map(msg => ({
-        role: msg.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: msg.content }]
+    if (provider === 'google') {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+      
+      const contents = messages.map(m => ({
+        role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
+        parts: [{ text: m.content }]
       }));
 
-      while (formattedContents.length > 0 && formattedContents[0].role === 'model') {
-        formattedContents.shift();
-      }
+      const payload = {
+        systemInstruction: {
+          parts: [{ text: combinedSystemPrompt }]
+        },
+        contents: contents
+      };
 
-      const response = await fetch(targetUrl, {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: formattedContents,
-          systemInstruction: { parts: [{ text: fullSystemPrompt }] }
-        })
+        body: JSON.stringify(payload)
       });
 
       const data = await response.json();
-      if (!response.ok || data.error) {
-        return res.status(response.status).json({ error: data.error?.message || 'Google API error' });
+
+      if (!response.ok) {
+        throw new Error(data.error?.message || JSON.stringify(data));
       }
 
-      const replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
-      return res.status(200).json({ reply: replyText });
+      replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated.';
 
     } else {
-      const activeModel = model || 'gpt-4o-mini';
-      const requestMessages = [
-        { role: 'system', content: fullSystemPrompt },
+      // Default: OpenAI
+      const endpoint = 'https://api.openai.com/v1/chat/completions';
+      
+      const formattedMessages = [
+        { role: 'system', content: combinedSystemPrompt },
         ...messages
       ];
 
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey.trim()}`
+          'Authorization': `Bearer ${apiKey}`
         },
         body: JSON.stringify({
-          model: activeModel,
-          messages: requestMessages
+          model: modelName,
+          messages: formattedMessages
         })
       });
 
       const data = await response.json();
-      if (!response.ok || data.error) {
-        return res.status(response.status).json({ error: data.error?.message || 'OpenAI API error' });
+
+      if (!response.ok) {
+        throw new Error(data.error?.message || JSON.stringify(data));
       }
 
-      const replyText = data.choices?.[0]?.message?.content || "No response generated.";
-      return res.status(200).json({ reply: replyText });
+      replyText = data.choices?.[0]?.message?.content || 'No response generated.';
     }
-  } catch (error) {
-    return res.status(500).json({ error: error.message || 'Server request failed.' });
+
+    return res.status(200).json({ reply: replyText });
+
+  } catch (err) {
+    console.error("API Route Error:", err);
+    return res.status(500).json({ error: err.message || 'Internal Server Error' });
   }
 }
