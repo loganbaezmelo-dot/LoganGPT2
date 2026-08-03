@@ -10,7 +10,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'API key is required.' });
   }
 
-  // Active timezone from client or default to UTC
+  // Fallback map for common user inputs to valid IANA timezone identifiers
   const activeZone = userTimeZone || 'UTC';
 
   let currentDate = '';
@@ -31,7 +31,7 @@ export default async function handler(req, res) {
       minute: '2-digit'
     });
   } catch (e) {
-    // Fallback if an invalid timezone string is passed
+    // Fallback if invalid timezone string is passed
     currentDate = new Date().toLocaleDateString('en-US', { 
       timeZone: 'UTC',
       weekday: 'long', 
@@ -47,10 +47,17 @@ export default async function handler(req, res) {
     });
   }
 
+  // Format label nicely for the AI instruction
+  let zoneLabel = activeZone;
+  if (activeZone === 'America/New_York') zoneLabel = 'Eastern Time (US)';
+  if (activeZone === 'America/Chicago') zoneLabel = 'Central Time (US)';
+  if (activeZone === 'America/Denver') zoneLabel = 'Mountain Time (US)';
+  if (activeZone === 'America/Los_Angeles') zoneLabel = 'Pacific Time (US)';
+
   // System instruction telling the AI how to handle date, time, and timezone prompts
   const dateInstruction = activeZone === 'UTC'
     ? `CURRENT REAL-WORLD DATE & TIME: ${currentDate} at ${currentTime} (UTC).\nNOTE: You are currently using UTC time by default. Whenever the user asks about the date or time, state that you are using UTC and ask what timezone they use so they can customize it.`
-    : `CURRENT REAL-WORLD DATE & TIME: ${currentDate} at ${currentTime} (${activeZone}).`;
+    : `CURRENT REAL-WORLD DATE & TIME: ${currentDate} at ${currentTime} (${zoneLabel}). Note: Use "${zoneLabel}" or the appropriate current daylight/standard abbreviation (e.g. EDT in summer) when reporting the time.`;
 
   const fullSystemPrompt = `${systemPrompt || ''}\n\n${dateInstruction}`;
 
