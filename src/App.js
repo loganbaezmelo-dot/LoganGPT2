@@ -226,17 +226,21 @@ export default function App() {
 
   const activeKey = provider === 'google' ? googleKey : openaiKey;
 
-  // Programmatic External Link Helper (Forces Mobile PWA Out of App Frame)
+  // Reliable External Link Opener
   const forceExternalOpen = (e, url) => {
     e.preventDefault();
     e.stopPropagation();
 
-    const isAndroid = /Android/i.test(navigator.userAgent);
-    if (isAndroid) {
-      const cleanUrl = url.replace(/^https?:\/\//, '');
-      window.location.href = `intent://${cleanUrl}#Intent;scheme=https;package=com.android.chrome;end`;
+    // In standalone PWA mode, opening in the same window forces the OS to launch an external browser tab.
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+    
+    if (isStandalone) {
+      window.location.href = url;
     } else {
-      window.open(url, '_blank', 'noopener,noreferrer');
+      const win = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!win) {
+        window.location.href = url;
+      }
     }
   };
 
