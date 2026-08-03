@@ -10,7 +10,6 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'API key is required.' });
     }
 
-    // 🧗 GOOGLE & OPENAI MODEL FALLBACK LADDERS
     const GEMINI_LADDER = [
       'gemini-3.6-flash',
       'gemini-3.5-flash',
@@ -49,18 +48,17 @@ export default async function handler(req, res) {
       formattedTimeStr = new Date().toISOString();
     }
 
-    const timeContext = `[CURRENT REAL-WORLD DATE AND TIME]: ${formattedTimeStr} (${targetTimeZone}). You MUST use this real-time clock whenever asked for current date, time, year, or temporal context.`;
+    const timeContext = `Current Real-World Time: ${formattedTimeStr} (${targetTimeZone}).`;
     
-    // Safety directive preventing reasoning/drafting leakage
-    const outputDirective = `STRICT OUTPUT DIRECTIVE: Respond ONLY with your direct final output. Never reveal, print, or format internal thoughts, drafting steps, reasoning processes, or planning notes in your response.`;
+    // Enforce an absolute constraint to prevent reasoning leaks
+    const securityHeader = `CRITICAL SYSTEM RULE: You are a direct assistant. Never output internal planning, meta-commentary, or analysis logs. Give your final conversational reply directly.`;
     
-    const combinedSystemPrompt = `${outputDirective}\n\n${systemPrompt ? `${systemPrompt}\n\n${timeContext}` : timeContext}`;
+    const combinedSystemPrompt = `${securityHeader}\n\n${systemPrompt || ''}\n\n${timeContext}`;
 
     let replyText = '';
     let lastError = null;
     let successfulModel = null;
 
-    // --- 🔄 FALLBACK LADDER EXECUTION ---
     for (const currentModel of modelLadder) {
       try {
         console.log(`[LoganGPT API] Trying ${provider.toUpperCase()} model: ${currentModel}`);
@@ -73,7 +71,6 @@ export default async function handler(req, res) {
             parts: [{ text: m.content || '' }]
           }));
 
-          // Only attach google_search tool to standard Gemini models
           const isStandardGemini = currentModel.startsWith('gemini');
           const payload = {
             systemInstruction: {
@@ -95,12 +92,12 @@ export default async function handler(req, res) {
             throw new Error(data.error?.message || `HTTP ${response.status}`);
           }
 
-          replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated.';
-          successfulModel = currentModel;
-          break; // Success! Exit loop
-
+          replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          if (replyText.trim()) {
+            successfulModel = currentModel;
+            break;
+          }
         } else {
-          // OpenAI Execution
           const endpoint = 'https://api.openai.com/v1/chat/completions';
           
           const formattedMessages = [
@@ -126,9 +123,11 @@ export default async function handler(req, res) {
             throw new Error(data.error?.message || `HTTP ${response.status}`);
           }
 
-          replyText = data.choices?.[0]?.message?.content || 'No response generated.';
-          successfulModel = currentModel;
-          break; // Success! Exit loop
+          replyText = data.choices?.[0]?.message?.content || '';
+          if (replyText.trim()) {
+            successfulModel = currentModel;
+            break;
+          }
         }
 
       } catch (err) {
