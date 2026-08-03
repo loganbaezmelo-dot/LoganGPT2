@@ -4,33 +4,52 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const { provider, apiKey, messages, model, systemPrompt } = req.body;
+  const { provider, apiKey, messages, model, systemPrompt, userTimeZone } = req.body;
 
   if (!apiKey) {
     return res.status(400).json({ error: 'API key is required.' });
   }
 
-  // Inject current real-world date dynamically into the system instructions
-  const currentDate = new Date().toLocaleDateString('en-US', { 
-    weekday: 'long', 
-    year: 'numeric', 
-    month: 'long', 
-    day: 'numeric' 
-  });
-  const fullSystemPrompt = `${systemPrompt || ''}\n\nCURRENT REAL-WORLD DATE: ${currentDate}`;
+  // Active timezone from client or default to UTC
+  const activeZone = userTimeZone || 'UTC';
+
+  let currentDate = '';
+  try {
+    currentDate = new Date().toLocaleDateString('en-US', { 
+      timeZone: activeZone,
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+  } catch (e) {
+    // Fallback if invalid timezone string is passed
+    currentDate = new Date().toLocaleDateString('en-US', { 
+      timeZone: 'UTC',
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+  }
+
+  // System instruction telling the AI how to handle dates and timezone prompts
+  const dateInstruction = activeZone === 'UTC'
+    ? `CURRENT REAL-WORLD DATE: ${currentDate} (UTC).\nNOTE: You are currently using UTC time by default. Whenever the user asks about the date or time, state that you are using UTC and ask what timezone they use so they can customize it.`
+    : `CURRENT REAL-WORLD DATE: ${currentDate} (${activeZone}).`;
+
+  const fullSystemPrompt = `${systemPrompt || ''}\n\n${dateInstruction}`;
 
   try {
     if (provider === 'google') {
       const activeModel = model || 'gemini-2.5-flash';
       const targetUrl = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${encodeURIComponent(apiKey.trim())}`;
 
-      // Format context history for Gemini REST API
       const formattedContents = messages.map(msg => ({
         role: msg.role === 'assistant' ? 'model' : 'user',
         parts: [{ text: msg.content }]
       }));
 
-      // Ensure history starts with user role
       while (formattedContents.length > 0 && formattedContents[0].role === 'model') {
         formattedContents.shift();
       }
@@ -53,7 +72,6 @@ export default async function handler(req, res) {
       return res.status(200).json({ reply: replyText });
 
     } else {
-      // Default: OpenAI Provider
       const activeModel = model || 'gpt-4o-mini';
       const requestMessages = [
         { role: 'system', content: fullSystemPrompt },
