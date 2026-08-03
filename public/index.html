@@ -27,6 +27,19 @@
       }
     </script>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+    <!-- Native Global Opener (Bypasses React Synthetic Events & Router Traps) -->
+    <script>
+      window.openKeyLink = function(url) {
+        var a = document.createElement('a');
+        a.href = url;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      };
+    </script>
   </head>
   <body class="bg-[#0B1120] text-slate-100 overflow-hidden">
     <noscript>You need to enable JavaScript to run this app.</noscript>
