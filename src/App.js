@@ -226,17 +226,18 @@ export default function App() {
 
   const activeKey = provider === 'google' ? googleKey : openaiKey;
 
-  // Programmatic External Link Helper (Bypasses Mobile PWA Router Traps)
+  // Programmatic External Link Helper (Forces Mobile PWA Out of App Frame)
   const forceExternalOpen = (e, url) => {
     e.preventDefault();
     e.stopPropagation();
-    const link = document.createElement('a');
-    link.href = url;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    if (isAndroid) {
+      const cleanUrl = url.replace(/^https?:\/\//, '');
+      window.location.href = `intent://${cleanUrl}#Intent;scheme=https;package=com.android.chrome;end`;
+    } else {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
   };
 
   // Auth & Settings Load
