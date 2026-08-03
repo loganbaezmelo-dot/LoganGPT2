@@ -226,9 +226,16 @@ export default function App() {
 
   const activeKey = provider === 'google' ? googleKey : openaiKey;
 
-  // External Link Helper
+  // External Link Helper with Popup Blocker Fallback
   const openExternalUrl = (url) => {
-    window.open(url, '_blank', 'noopener,noreferrer');
+    try {
+      const win = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!win || win.closed || typeof win.closed === 'undefined') {
+        window.location.href = url;
+      }
+    } catch {
+      window.location.href = url;
+    }
   };
 
   // Auth & Settings Load
