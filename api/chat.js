@@ -1,35 +1,3 @@
-// --- DuckDuckGo Web Search Helper ---
-async function fetchDuckDuckGoSearch(query) {
-  try {
-    const response = await fetch(
-      `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`
-    );
-    const data = await response.json();
-
-    let summary = "";
-
-    // Abstract text (Direct Answer)
-    if (data.AbstractText) {
-      summary += `Abstract (${data.AbstractSource}): ${data.AbstractText}\n`;
-    }
-
-    // Related Topics
-    if (data.RelatedTopics && data.RelatedTopics.length > 0) {
-      const topics = data.RelatedTopics
-        .slice(0, 4)
-        .filter(t => t.Text)
-        .map(t => `- ${t.Text}`)
-        .join("\n");
-      if (topics) summary += `Related Knowledge:\n${topics}\n`;
-    }
-
-    return summary.trim();
-  } catch (err) {
-    console.error("DuckDuckGo API Error:", err);
-    return null;
-  }
-}
-
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -42,7 +10,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'API key is required.' });
     }
 
-    const modelName = model || (provider === 'google' ? 'gemini-3.6-flash' : 'gpt-5.6-luna');
+    const modelName = model || (provider === 'google' ? 'gemini-1.5-flash' : 'gpt-4o-mini');
     const targetTimeZone = userTimeZone || 'America/New_York';
 
     let formattedTimeStr = '';
@@ -62,17 +30,8 @@ export default async function handler(req, res) {
       formattedTimeStr = new Date().toISOString();
     }
 
-    // Extract latest user query for DuckDuckGo
-    const lastUserMessage = messages[messages.length - 1]?.content || "";
-    const searchData = await fetchDuckDuckGoSearch(lastUserMessage);
-
     const timeContext = `[CURRENT REAL-WORLD DATE AND TIME]: ${formattedTimeStr} (${targetTimeZone}). You MUST use this real-time clock whenever asked for current date, time, year, or temporal context.`;
-    
-    let combinedSystemPrompt = systemPrompt ? `${systemPrompt}\n\n${timeContext}` : timeContext;
-    
-    if (searchData) {
-      combinedSystemPrompt += `\n\n[LIVE DUCKDUCKGO SEARCH DATA]\n${searchData}\nUse this live search data to answer the request if relevant.`;
-    }
+    const combinedSystemPrompt = systemPrompt ? `${systemPrompt}\n\n${timeContext}` : timeContext;
 
     let replyText = '';
 
@@ -84,11 +43,17 @@ export default async function handler(req, res) {
         parts: [{ text: m.content || '' }]
       }));
 
+      // 🌐 Added tools: [{ google_search: {} }] for native real-time web browsing!
       const payload = {
         systemInstruction: {
           parts: [{ text: combinedSystemPrompt }]
         },
-        contents: contents
+        contents: contents,
+        tools: [
+          {
+            google_search: {}
+          }
+        ]
       };
 
       const response = await fetch(endpoint, {
