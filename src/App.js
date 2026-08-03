@@ -540,7 +540,6 @@ export default function App() {
             body: JSON.stringify({
               provider: provider,
               apiKey: currentKey,
-              model: provider === 'google' ? 'gemini-3.6-flash' : 'gpt-5.6-luna',
               messages: requestMessages,
               systemPrompt: sysPrompt,
               userTimeZone: effectiveTimeZone
@@ -793,7 +792,7 @@ export default function App() {
                     <Zap className="w-4 h-4" fill="currentColor"/>
                   </div>
                   <div className="bg-slate-900/50 rounded-2xl p-4 text-xs text-slate-400 border border-white/5 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-slate-500 animate-ping" /> Generating response via {provider.toUpperCase()}...
+                    <span className="w-2 h-2 rounded-full bg-slate-500 animate-ping" /> Routing request through {provider.toUpperCase()} ladder...
                   </div>
                 </div>
               )}
@@ -929,7 +928,7 @@ export default function App() {
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">OpenAI API Key</label>
                     <a 
-                      href="https://platform.openai.com/api-keys" 
+                      href="https://platform.openai.com/api-keys)" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1 transition-colors font-medium"
