@@ -48,12 +48,15 @@ export default async function handler(req, res) {
       formattedTimeStr = new Date().toISOString();
     }
 
-    const timeContext = `Current Real-World Time: ${formattedTimeStr} (${targetTimeZone}).`;
+    const timeContext = `Current Time: ${formattedTimeStr} (${targetTimeZone}).`;
+
+    // Hardened constraint forcing conversational output only and blocking thought leaks
+    const combinedSystemPrompt = `You are LoganGPT, an enterprise AI workspace. 
+    Never output internal thoughts, analysis logs, user intent breakdowns, or planning steps. 
+    Always respond directly to the user in a natural, professional tone.
     
-    // Enforce an absolute constraint to prevent reasoning leaks
-    const securityHeader = `CRITICAL SYSTEM RULE: You are a direct assistant. Never output internal planning, meta-commentary, or analysis logs. Give your final conversational reply directly.`;
-    
-    const combinedSystemPrompt = `${securityHeader}\n\n${systemPrompt || ''}\n\n${timeContext}`;
+    ${systemPrompt || ''}
+    ${timeContext}`;
 
     let replyText = '';
     let lastError = null;
