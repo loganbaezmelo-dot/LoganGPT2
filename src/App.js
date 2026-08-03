@@ -4,7 +4,7 @@ import {
   Trash2, Monitor, Zap, Cloud, LogOut, Mail, Lock, 
   Key, User, WifiOff, Image as ImageIcon, ExternalLink,
   Paintbrush, Layout, Play, Bot, ToggleLeft, ToggleRight,
-  Copy, Check
+  Copy, Check, Globe
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -192,6 +192,7 @@ export default function App() {
   const [provider, setProvider] = useState(() => localStorage.getItem('ai_provider') || 'openai');
   const [openaiKey, setOpenaiKey] = useState(() => localStorage.getItem('openai_api_key') || '');
   const [googleKey, setGoogleKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
+  const [timeZone, setTimeZone] = useState(() => localStorage.getItem('user_timezone') || 'UTC');
   
   const [currentMode, setCurrentMode] = useState('standard'); 
   const [selectedAI, setSelectedAI] = useState(null); 
@@ -286,7 +287,6 @@ export default function App() {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      // Fallback timestamp logic to keep pending messages visible without resetting the screen
       const now = Date.now() / 1000;
       msgs.sort((a, b) => (a.timestamp?.seconds || now) - (b.timestamp?.seconds || now));
 
@@ -381,9 +381,26 @@ export default function App() {
     setInput('');
     setIsLoading(true);
 
+    // Simple client-side timezone detection heuristic if user mentions timezone
+    const tzMatches = {
+      'est': 'America/New_York', 'eastern': 'America/New_York', 'ny': 'America/New_York', 'new york': 'America/New_York',
+      'cst': 'America/Chicago', 'central': 'America/Chicago',
+      'mst': 'America/Denver', 'mountain': 'America/Denver',
+      'pst': 'America/Los_Angeles', 'pacific': 'America/Los_Angeles',
+      'gmt': 'Europe/London', 'bst': 'Europe/London', 'london': 'Europe/London'
+    };
+    
+    const lowerText = userText.toLowerCase();
+    for (const [keyword, tz] of Object.entries(tzMatches)) {
+      if (lowerText.includes(`timezone is ${keyword}`) || lowerText.includes(`use ${keyword}`) || lowerText.includes(`i am in ${keyword}`) || lowerText.includes(`i live in ${keyword}`)) {
+        setTimeZone(tz);
+        localStorage.setItem('user_timezone', tz);
+        break;
+      }
+    }
+
     let currentChatId = activeChatId;
 
-    // Optimistic message update
     const optimisticUserMsg = { id: `opt-user-${Date.now()}`, role: 'user', text: userText, timestamp: { seconds: Date.now() / 1000 } };
     setMessages((prev) => [...prev, optimisticUserMsg]);
 
@@ -447,7 +464,8 @@ export default function App() {
               apiKey: currentKey,
               model: provider === 'google' ? 'gemini-2.5-flash' : 'gpt-4o-mini',
               messages: requestMessages,
-              systemPrompt: sysPrompt
+              systemPrompt: sysPrompt,
+              userTimeZone: timeZone
             })
           }
         );
@@ -488,6 +506,7 @@ export default function App() {
 
   const saveSettings = () => {
     localStorage.setItem('ai_provider', provider);
+    localStorage.setItem('user_timezone', timeZone);
     
     if (openaiKey.trim()) {
       localStorage.setItem('openai_api_key', openaiKey.trim());
@@ -780,6 +799,26 @@ export default function App() {
                   >
                     Google Gemini
                   </button>
+                </div>
+              </div>
+
+              {/* TimeZone Setting */}
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">System Timezone</label>
+                <div className="relative">
+                  <Globe className="absolute left-3 top-3.5 w-4 h-4 text-slate-500"/>
+                  <select 
+                    value={timeZone} 
+                    onChange={(e) => setTimeZone(e.target.value)}
+                    className="w-full bg-slate-950 border border-white/10 rounded-xl py-3 pl-9 pr-4 text-sm text-white focus:outline-none focus:border-violet-500"
+                  >
+                    <option value="UTC">UTC (Default)</option>
+                    <option value="America/New_York">Eastern Time (US / EST)</option>
+                    <option value="America/Chicago">Central Time (US / CST)</option>
+                    <option value="America/Denver">Mountain Time (US / MST)</option>
+                    <option value="America/Los_Angeles">Pacific Time (US / PST)</option>
+                    <option value="Europe/London">London (GMT / BST)</option>
+                  </select>
                 </div>
               </div>
 
