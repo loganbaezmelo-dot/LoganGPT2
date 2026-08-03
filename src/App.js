@@ -883,6 +883,7 @@ export default function App() {
                       href="[https://platform.openai.com/api-keys](https://platform.openai.com/api-keys)" 
                       target="_blank" 
                       rel="noopener noreferrer" 
+                      onClick={(e) => e.stopPropagation()}
                       className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1 transition-colors font-medium"
                     >
                       Get Key <ExternalLink className="w-3 h-3"/>
@@ -910,6 +911,7 @@ export default function App() {
                       href="[https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)" 
                       target="_blank" 
                       rel="noopener noreferrer" 
+                      onClick={(e) => e.stopPropagation()}
                       className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors font-medium"
                     >
                       Get Key <ExternalLink className="w-3 h-3"/>
