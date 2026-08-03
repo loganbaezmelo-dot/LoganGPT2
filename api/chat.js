@@ -4,14 +4,29 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { provider, apiKey, model, messages = [], systemPrompt, userTimeZone } = req.body || {};
+    const { provider, apiKey, messages = [], systemPrompt, userTimeZone } = req.body || {};
 
     if (!apiKey) {
       return res.status(400).json({ error: 'API key is required.' });
     }
 
-    // Updated model strings to active non-deprecated models
-    const modelName = model || (provider === 'google' ? 'gemini-3.6-flash' : 'gpt-5.6-luna');
+    // 🧗 MODEL FALLBACK LADDERS
+    // Primary models listed first; falls back to robust alternatives if primary fails
+    const GEMINI_LADDER = [
+      'gemini-3.6-flash',
+      'gemini-3.5-flash',
+      'gemini-2.5-flash',
+      'gemini-1.5-flash'
+    ];
+
+    const OPENAI_LADDER = [
+      'gpt-5.6-luna',
+      'gpt-5.5-instant',
+      'gpt-4o-mini',
+      'gpt-4o'
+    ];
+
+    const modelLadder = provider === 'google' ? GEMINI_LADDER : OPENAI_LADDER;
     const targetTimeZone = userTimeZone || 'America/New_York';
 
     let formattedTimeStr = '';
@@ -35,75 +50,92 @@ export default async function handler(req, res) {
     const combinedSystemPrompt = systemPrompt ? `${systemPrompt}\n\n${timeContext}` : timeContext;
 
     let replyText = '';
+    let lastError = null;
+    let successfulModel = null;
 
-    if (provider === 'google') {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-      
-      const contents = messages.map(m => ({
-        role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
-        parts: [{ text: m.content || '' }]
-      }));
+    // --- 🔄 FALLBACK LADDER LOOP ---
+    for (const currentModel of modelLadder) {
+      try {
+        console.log(`[LoganGPT API] Attempting ${provider.toUpperCase()} model: ${currentModel}`);
 
-      const payload = {
-        systemInstruction: {
-          parts: [{ text: combinedSystemPrompt }]
-        },
-        contents: contents,
-        tools: [
-          {
-            google_search: {}
+        if (provider === 'google') {
+          const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`;
+          
+          const contents = messages.map(m => ({
+            role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
+            parts: [{ text: m.content || '' }]
+          }));
+
+          const payload = {
+            systemInstruction: {
+              parts: [{ text: combinedSystemPrompt }]
+            },
+            contents: contents,
+            tools: [{ google_search: {} }]
+          };
+
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(data.error?.message || `HTTP ${response.status}`);
           }
-        ]
-      };
 
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+          replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated.';
+          successfulModel = currentModel;
+          break; // Success! Break out of the loop
 
-      const data = await response.json();
+        } else {
+          // OpenAI Call
+          const endpoint = 'https://api.openai.com/v1/chat/completions';
+          
+          const formattedMessages = [
+            { role: 'system', content: combinedSystemPrompt },
+            ...messages
+          ];
 
-      if (!response.ok) {
-        return res.status(response.status).json({ 
-          error: data.error?.message || `Google API error (${response.status})` 
-        });
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+              model: currentModel,
+              messages: formattedMessages
+            })
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(data.error?.message || `HTTP ${response.status}`);
+          }
+
+          replyText = data.choices?.[0]?.message?.content || 'No response generated.';
+          successfulModel = currentModel;
+          break; // Success! Break out of the loop
+        }
+
+      } catch (err) {
+        console.warn(`[LoganGPT API] Model ${currentModel} failed: ${err.message}. Trying next rung on ladder...`);
+        lastError = err.message;
       }
-
-      replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated.';
-
-    } else {
-      const endpoint = 'https://api.openai.com/v1/chat/completions';
-      
-      const formattedMessages = [
-        { role: 'system', content: combinedSystemPrompt },
-        ...messages
-      ];
-
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: modelName,
-          messages: formattedMessages
-        })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        return res.status(response.status).json({ 
-          error: data.error?.message || `OpenAI API error (${response.status})` 
-        });
-      }
-
-      replyText = data.choices?.[0]?.message?.content || 'No response generated.';
     }
 
-    return res.status(200).json({ reply: replyText });
+    // If all models in the ladder failed
+    if (!successfulModel) {
+      return res.status(500).json({ 
+        error: `All models in ${provider.toUpperCase()} fallback ladder failed. Last error: ${lastError}` 
+      });
+    }
+
+    return res.status(200).json({ reply: replyText, usedModel: successfulModel });
 
   } catch (err) {
     console.error("API Route Execution Error:", err);
