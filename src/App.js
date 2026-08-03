@@ -47,22 +47,21 @@ const SYSTEM_PROMPT_CANVAS = "You are LoganGPT Canvas. Your goal is to build fun
 const fetchWithRetry = async (url, options, retries = 2, backoff = 500) => {
   try {
     const response = await fetch(url, options);
-    if (!response.ok) {
-      let errDetail = '';
-      try {
-        const rawText = await response.text();
-        try {
-          const errJson = JSON.parse(rawText);
-          errDetail = errJson.error || JSON.stringify(errJson, null, 2);
-        } catch {
-          errDetail = rawText;
-        }
-      } catch (e) {
-        errDetail = 'Could not read error response body.';
-      }
-      throw new Error(`HTTP ${response.status} ${response.statusText}\n${errDetail}`);
+    const rawText = await response.text();
+
+    let parsedData = {};
+    try {
+      parsedData = JSON.parse(rawText);
+    } catch {
+      parsedData = { error: rawText };
     }
-    return await response.json();
+
+    if (!response.ok) {
+      const errDetail = parsedData.error || `HTTP ${response.status} ${response.statusText}`;
+      throw new Error(typeof errDetail === 'string' ? errDetail : JSON.stringify(errDetail, null, 2));
+    }
+
+    return parsedData;
   } catch (err) {
     if (retries <= 0) throw err;
     await new Promise(r => setTimeout(r, backoff));
@@ -223,6 +222,7 @@ export default function App() {
   const [copiedCode, setCopiedCode] = useState(false);
 
   const chatContainerRef = useRef(null);
+  const messagesEndRef = useRef(null);
 
   const activeKey = provider === 'google' ? googleKey : openaiKey;
 
@@ -339,11 +339,9 @@ export default function App() {
     return () => unsubscribe();
   }, [user, activeChatId]);
 
-  // Auto Scroll
+  // Auto Scroll Anchor Fix
   useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-    }
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, activeChatId, isLoading]);
 
   // Actions
@@ -663,9 +661,9 @@ export default function App() {
           </div>
         </header>
 
-        <main ref={chatContainerRef} className="flex-1 overflow-y-auto pt-20 pb-28 px-4 scroll-smooth">
+        <main ref={chatContainerRef} className="flex-1 overflow-y-auto pt-20 pb-32 px-4 scroll-smooth flex flex-col">
           {(!activeChatId && messages.length === 0) ? (
-            <div className="max-w-2xl mx-auto mt-12 md:mt-20 text-center space-y-8 px-4 animate-fade-in">
+            <div className="max-w-2xl mx-auto mt-12 md:mt-20 text-center space-y-8 px-4 animate-fade-in my-auto">
               <div className="relative w-20 h-20 mx-auto">
                 <div className={`absolute inset-0 bg-gradient-to-tr rounded-2xl blur-xl opacity-50 animate-pulse ${selectedAI ? 'from-cyan-500 to-blue-500' : currentMode === 'creative' ? 'from-pink-500 to-rose-500' : currentMode === 'canvas' ? 'from-yellow-500 to-orange-500' : 'from-violet-500 to-indigo-500'}`}></div>
                 <div className="relative w-20 h-20 bg-slate-900 rounded-2xl border border-white/10 flex items-center justify-center shadow-2xl" style={{ borderColor: getAccentColor() }}>
@@ -675,7 +673,7 @@ export default function App() {
               <div><h2 className="text-3xl font-bold text-white mb-2">{selectedAI ? `Talking to ${selectedAI.name}.` : currentMode === 'creative' ? "Creative Mode Active." : currentMode === 'canvas' ? "Canvas Engine Ready." : "System Online."}</h2><p className="text-slate-400">{selectedAI ? (selectedAI.isRoleplay ? "Roleplay Mode Active. Internet disabled." : "Custom Persona Active.") : currentMode === 'creative' ? "Generates images via Pollinations AI." : currentMode === 'canvas' ? "Builds single-file web apps instantly." : (activeKey ? `Connected via ${provider.toUpperCase()} Provider.` : "Running in Offline Mode.")}</p></div>
             </div>
           ) : (
-            <div className="max-w-3xl mx-auto space-y-6">
+            <div className="max-w-3xl w-full mx-auto space-y-6 flex flex-col flex-1">
               {messages.map((msg, idx) => (
                 <div key={msg.id || idx} className={`flex gap-3 sm:gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
                   <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex-shrink-0 flex items-center justify-center text-xs font-bold border border-white/10 shadow-lg ${msg.role === 'user' ? 'bg-slate-800 text-slate-300' : 'text-white'}`} style={msg.role === 'assistant' || msg.role === 'model' ? { backgroundColor: selectedAI ? '#06b6d4' : currentMode === 'creative' ? '#ec4899' : currentMode === 'canvas' ? '#eab308' : theme.color } : {}}>
@@ -750,6 +748,7 @@ export default function App() {
                   </div>
                 </div>
               )}
+              <div ref={messagesEndRef} />
             </div>
           )}
         </main>
