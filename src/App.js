@@ -540,7 +540,7 @@ export default function App() {
             body: JSON.stringify({
               provider: provider,
               apiKey: currentKey,
-              model: provider === 'google' ? 'gemini-1.5-flash' : 'gpt-4o-mini',
+              model: provider === 'google' ? 'gemini-3.6-flash' : 'gpt-5.6-luna',
               messages: requestMessages,
               systemPrompt: sysPrompt,
               userTimeZone: effectiveTimeZone
@@ -924,59 +924,58 @@ export default function App() {
               </div>
 
               {/* OpenAI Key Input */}
-{provider === 'openai' && (
-  <div>
-    <div className="flex items-center justify-between mb-2">
-      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">OpenAI API Key</label>
-      <a 
-        href="https://platform.openai.com/api-keys" 
-        target="_blank" 
-        rel="noopener noreferrer"
-        className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1 transition-colors font-medium"
-      >
-        Get Key <ExternalLink className="w-3 h-3"/>
-      </a>
-    </div>
-    <div className="relative">
-      <Key className="absolute left-3 top-3.5 w-4 h-4 text-slate-500"/>
-      <input 
-        type="password" 
-        value={openaiKey} 
-        onChange={(e) => setOpenaiKey(e.target.value)} 
-        placeholder="sk-proj-..." 
-        className="w-full bg-slate-950 border border-white/10 rounded-xl py-3 pl-9 pr-4 text-sm text-white focus:outline-none focus:border-violet-500" 
-      />
-    </div>
-  </div>
-)}
+              {provider === 'openai' && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">OpenAI API Key</label>
+                    <a 
+                      href="[https://platform.openai.com/api-keys](https://platform.openai.com/api-keys)" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1 transition-colors font-medium"
+                    >
+                      Get Key <ExternalLink className="w-3 h-3"/>
+                    </a>
+                  </div>
+                  <div className="relative">
+                    <Key className="absolute left-3 top-3.5 w-4 h-4 text-slate-500"/>
+                    <input 
+                      type="password" 
+                      value={openaiKey} 
+                      onChange={(e) => setOpenaiKey(e.target.value)} 
+                      placeholder="sk-proj-..." 
+                      className="w-full bg-slate-950 border border-white/10 rounded-xl py-3 pl-9 pr-4 text-sm text-white focus:outline-none focus:border-violet-500" 
+                    />
+                  </div>
+                </div>
+              )}
 
-{/* Google Gemini Key Input */}
-{provider === 'google' && (
-  <div>
-    <div className="flex items-center justify-between mb-2">
-      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Google Gemini API Key</label>
-      <a 
-        href="https://aistudio.google.com/app/apikey" 
-        target="_blank" 
-        rel="noopener noreferrer"
-        className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors font-medium"
-      >
-        Get Key <ExternalLink className="w-3 h-3"/>
-      </a>
-    </div>
-    <div className="relative">
-      <Key className="absolute left-3 top-3.5 w-4 h-4 text-slate-500"/>
-      <input 
-        type="password" 
-        value={googleKey} 
-        onChange={(e) => setGoogleKey(e.target.value)} 
-        placeholder="AIzaSy..." 
-        className="w-full bg-slate-950 border border-white/10 rounded-xl py-3 pl-9 pr-4 text-sm text-white focus:outline-none focus:border-emerald-500" 
-      />
-    </div>
-  </div>
-)}
-
+              {/* Google Gemini Key Input */}
+              {provider === 'google' && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Google Gemini API Key</label>
+                    <a 
+                      href="[https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors font-medium"
+                    >
+                      Get Key <ExternalLink className="w-3 h-3"/>
+                    </a>
+                  </div>
+                  <div className="relative">
+                    <Key className="absolute left-3 top-3.5 w-4 h-4 text-slate-500"/>
+                    <input 
+                      type="password" 
+                      value={googleKey} 
+                      onChange={(e) => setGoogleKey(e.target.value)} 
+                      placeholder="AIzaSy..." 
+                      className="w-full bg-slate-950 border border-white/10 rounded-xl py-3 pl-9 pr-4 text-sm text-white focus:outline-none focus:border-emerald-500" 
+                    />
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Accent Theme</label>
