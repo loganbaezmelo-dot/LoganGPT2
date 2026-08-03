@@ -14,6 +14,8 @@ export default async function handler(req, res) {
   const activeZone = userTimeZone || 'UTC';
 
   let currentDate = '';
+  let currentTime = '';
+
   try {
     currentDate = new Date().toLocaleDateString('en-US', { 
       timeZone: activeZone,
@@ -22,8 +24,14 @@ export default async function handler(req, res) {
       month: 'long', 
       day: 'numeric' 
     });
+
+    currentTime = new Date().toLocaleTimeString('en-US', {
+      timeZone: activeZone,
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   } catch (e) {
-    // Fallback if invalid timezone string is passed
+    // Fallback if an invalid timezone string is passed
     currentDate = new Date().toLocaleDateString('en-US', { 
       timeZone: 'UTC',
       weekday: 'long', 
@@ -31,12 +39,18 @@ export default async function handler(req, res) {
       month: 'long', 
       day: 'numeric' 
     });
+
+    currentTime = new Date().toLocaleTimeString('en-US', {
+      timeZone: 'UTC',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   }
 
-  // System instruction telling the AI how to handle dates and timezone prompts
+  // System instruction telling the AI how to handle date, time, and timezone prompts
   const dateInstruction = activeZone === 'UTC'
-    ? `CURRENT REAL-WORLD DATE: ${currentDate} (UTC).\nNOTE: You are currently using UTC time by default. Whenever the user asks about the date or time, state that you are using UTC and ask what timezone they use so they can customize it.`
-    : `CURRENT REAL-WORLD DATE: ${currentDate} (${activeZone}).`;
+    ? `CURRENT REAL-WORLD DATE & TIME: ${currentDate} at ${currentTime} (UTC).\nNOTE: You are currently using UTC time by default. Whenever the user asks about the date or time, state that you are using UTC and ask what timezone they use so they can customize it.`
+    : `CURRENT REAL-WORLD DATE & TIME: ${currentDate} at ${currentTime} (${activeZone}).`;
 
   const fullSystemPrompt = `${systemPrompt || ''}\n\n${dateInstruction}`;
 
