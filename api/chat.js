@@ -11,13 +11,16 @@ export default async function handler(req, res) {
     }
 
     // 🧗 GOOGLE & OPENAI MODEL FALLBACK LADDERS
+    // Updated with GA 2026 Google API model strings
     const GEMINI_LADDER = [
       'gemini-3.6-flash',
       'gemini-3.5-flash',
-      'gemini-2.5-flash',
       'gemini-3.5-flash-lite',
-      'gemma-2-27b-it',
-      'gemma-2-9b-it'
+      'gemini-3.1-flash-lite',
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite',
+      'gemma-4-31b-it',
+      'gemma-4-26b-a4b-it'
     ];
 
     const OPENAI_LADDER = [
@@ -67,13 +70,14 @@ export default async function handler(req, res) {
             parts: [{ text: m.content || '' }]
           }));
 
+          // Only attach google_search tool to standard Gemini models, as Gemma models throw 400 when tool payload is present
+          const isStandardGemini = currentModel.startsWith('gemini');
           const payload = {
             systemInstruction: {
               parts: [{ text: combinedSystemPrompt }]
             },
             contents: contents,
-            // Only add search grounding for standard Gemini models (Gemma models don't support google_search tool)
-            ...(currentModel.startsWith('gemini') ? { tools: [{ google_search: {} }] } : {})
+            ...(isStandardGemini ? { tools: [{ google_search: {} }] } : {})
           };
 
           const response = await fetch(endpoint, {
