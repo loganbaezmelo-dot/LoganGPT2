@@ -13,7 +13,7 @@ import remarkGfm from 'remark-gfm';
 import { db, auth } from './firebase';
 import { 
   collection, addDoc, query, onSnapshot, 
-  deleteDoc, doc, updateDoc, serverTimestamp 
+  deleteDoc, doc, updateDoc, setDoc, serverTimestamp 
 } from 'firebase/firestore';
 import { 
   onAuthStateChanged, 
@@ -192,7 +192,7 @@ export default function App() {
   const [provider, setProvider] = useState(() => localStorage.getItem('ai_provider') || 'openai');
   const [openaiKey, setOpenaiKey] = useState(() => localStorage.getItem('openai_api_key') || '');
   const [googleKey, setGoogleKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
-  const [timeZone, setTimeZone] = useState(() => localStorage.getItem('user_timezone') || 'UTC');
+  const [timeZone, setTimeZone] = useState(() => localStorage.getItem('user_timezone') || 'America/New_York');
   
   const [currentMode, setCurrentMode] = useState('standard'); 
   const [selectedAI, setSelectedAI] = useState(null); 
@@ -226,7 +226,7 @@ export default function App() {
 
   const activeKey = provider === 'google' ? googleKey : openaiKey;
 
-  // Auth Loading
+  // Auth & Settings Load
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -238,6 +238,39 @@ export default function App() {
 
     return () => unsubscribe();
   }, []);
+
+  // Sync Settings from Firestore
+  useEffect(() => {
+    if (!user) return;
+    const settingsDocRef = doc(db, 'users', user.uid, 'settings', 'config');
+    const unsubscribe = onSnapshot(settingsDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.provider) {
+          setProvider(data.provider);
+          localStorage.setItem('ai_provider', data.provider);
+        }
+        if (data.openaiKey !== undefined) {
+          setOpenaiKey(data.openaiKey);
+          if (data.openaiKey) localStorage.setItem('openai_api_key', data.openaiKey);
+        }
+        if (data.googleKey !== undefined) {
+          setGoogleKey(data.googleKey);
+          if (data.googleKey) localStorage.setItem('gemini_api_key', data.googleKey);
+        }
+        if (data.timeZone) {
+          setTimeZone(data.timeZone);
+          localStorage.setItem('user_timezone', data.timeZone);
+        }
+        if (data.theme) {
+          setTheme(data.theme);
+          localStorage.setItem('logan_theme', JSON.stringify(data.theme));
+        }
+      }
+    }, (err) => console.error("Settings Listener Error:", err));
+
+    return () => unsubscribe();
+  }, [user]);
 
   // Fetch Chats
   useEffect(() => {
@@ -276,7 +309,7 @@ export default function App() {
     }
   }, [activeChatId, chats, customAIs]);
 
-  // Fetch Messages (with race-condition protection)
+  // Fetch Messages
   useEffect(() => {
     if (!user || !activeChatId) {
       setMessages([]);
@@ -397,6 +430,9 @@ export default function App() {
         effectiveTimeZone = tz;
         setTimeZone(tz);
         localStorage.setItem('user_timezone', tz);
+        
+        // Async update to Firestore
+        setDoc(doc(db, 'users', user.uid, 'settings', 'config'), { timeZone: tz }, { merge: true }).catch(console.error);
         break;
       }
     }
@@ -506,7 +542,7 @@ export default function App() {
     return `I am currently operating in **Offline Mode**. Please enter a valid ${provider === 'google' ? 'Google Gemini' : 'OpenAI'} API key in Settings to unlock dynamic responses.`;
   };
 
-  const saveSettings = () => {
+  const saveSettings = async () => {
     localStorage.setItem('ai_provider', provider);
     localStorage.setItem('user_timezone', timeZone);
     
@@ -523,6 +559,23 @@ export default function App() {
     }
 
     localStorage.setItem('logan_theme', JSON.stringify(theme));
+
+    // Persist to Cloud Firestore for cross-device sync
+    if (user) {
+      try {
+        await setDoc(doc(db, 'users', user.uid, 'settings', 'config'), {
+          provider,
+          openaiKey: openaiKey.trim(),
+          googleKey: googleKey.trim(),
+          timeZone,
+          theme,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      } catch (err) {
+        console.error("Failed to save settings to Firestore:", err);
+      }
+    }
+
     setIsSettingsOpen(false);
   };
 
