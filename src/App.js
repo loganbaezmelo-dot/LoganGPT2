@@ -431,7 +431,6 @@ export default function App() {
         setTimeZone(tz);
         localStorage.setItem('user_timezone', tz);
         
-        // Async update to Firestore
         setDoc(doc(db, 'users', user.uid, 'settings', 'config'), { timeZone: tz }, { merge: true }).catch(console.error);
         break;
       }
@@ -500,7 +499,7 @@ export default function App() {
             body: JSON.stringify({
               provider: provider,
               apiKey: currentKey,
-              model: provider === 'google' ? 'gemini-2.5-flash' : 'gpt-4o-mini',
+              model: provider === 'google' ? 'gemini-3.6-flash' : 'gpt-5.6-luna',
               messages: requestMessages,
               systemPrompt: sysPrompt,
               userTimeZone: effectiveTimeZone
@@ -560,7 +559,6 @@ export default function App() {
 
     localStorage.setItem('logan_theme', JSON.stringify(theme));
 
-    // Persist to Cloud Firestore for cross-device sync
     if (user) {
       try {
         await setDoc(doc(db, 'users', user.uid, 'settings', 'config'), {
