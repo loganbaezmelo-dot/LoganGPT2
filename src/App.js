@@ -43,7 +43,27 @@ const LOCAL_BRAIN = [
   }
 ];
 
-// System prompt instructing the AI on capabilities, Markdown, arrows, LaTeX, and code formatting
+// Dynamic DuckDuckGo Instant Answer Search Helper (Free & Keyless)
+const fetchDuckDuckGoSearch = async (queryText) => {
+  try {
+    const res = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(queryText)}&format=json&no_html=1&skip_disambig=1`);
+    const data = await res.json();
+
+    if (data.AbstractText) {
+      return `🦆 **DuckDuckGo Web Result** (${data.AbstractSource}):\n\n${data.AbstractText}\n\n[Read source on DuckDuckGo](${data.AbstractURL})`;
+    } else if (data.RelatedTopics && data.RelatedTopics.length > 0) {
+      const topic = data.RelatedTopics.find(t => t.Text && t.FirstURL);
+      if (topic) {
+        return `🦆 **DuckDuckGo Search Info**:\n\n${topic.Text}\n\n[Read more](${topic.FirstURL})`;
+      }
+    }
+    return null;
+  } catch (err) {
+    console.error("DuckDuckGo Fetch Error:", err);
+    return null;
+  }
+};
+
 const SYSTEM_PROMPT_STANDARD = `You are LoganGPT, an enterprise AI workspace. Format responses clearly using valid Markdown and LaTeX when appropriate.
 
 STRICT FORMATTING & CAPABILITIES INSTRUCTIONS:
@@ -415,6 +435,19 @@ export default function App() {
     if (mode !== 'standard') setSelectedAI(null); 
   };
 
+  const queryLocalBrain = async (text) => {
+    const lowerInput = text.toLowerCase();
+    for (const entry of LOCAL_BRAIN) {
+      if (entry.triggers.some(t => lowerInput.includes(t))) return entry.response;
+    }
+
+    // Try fetching live web search from DuckDuckGo Instant Answer API
+    const searchResult = await fetchDuckDuckGoSearch(text);
+    if (searchResult) return searchResult;
+
+    return `I am currently operating in **Offline Mode**. Please enter a valid ${provider === 'google' ? 'Google Gemini' : 'OpenAI'} API key in Settings to unlock dynamic reasoning.`;
+  };
+
   const handleSend = async (e) => {
     e.preventDefault();
     if (!input.trim() || !user) return;
@@ -478,7 +511,7 @@ export default function App() {
         const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=800&height=600&nologo=true`;
         replyText = `🎨 **Image Generated** (via Pollinations AI)\n\n![${userText}](${imageUrl})`;
       } else if (!currentKey) {
-        replyText = queryLocalBrain(userText);
+        replyText = await queryLocalBrain(userText);
       } else {
         let sysPrompt = SYSTEM_PROMPT_STANDARD;
         if (currentMode === 'canvas') {
@@ -527,8 +560,8 @@ export default function App() {
       console.error("Messaging Error:", err);
       
       const exactErrorText = `❌ **Exact Error Message:**\n\`\`\`\n${err.message || err}\n\`\`\``;
-      const fallbackText = queryLocalBrain(userText);
-      const combinedReply = `${exactErrorText}\n\n---\n\n*Falling back to local brain:*\n${fallbackText}`;
+      const fallbackText = await queryLocalBrain(userText);
+      const combinedReply = `${exactErrorText}\n\n---\n\n*Falling back to web search & local brain:*\n${fallbackText}`;
 
       setMessages((prev) => [...prev, { id: `opt-err-${Date.now()}`, role: 'assistant', text: combinedReply, timestamp: { seconds: Date.now() / 1000 } }]);
 
@@ -540,14 +573,6 @@ export default function App() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const queryLocalBrain = (text) => {
-    const lowerInput = text.toLowerCase();
-    for (const entry of LOCAL_BRAIN) {
-      if (entry.triggers.some(t => lowerInput.includes(t))) return entry.response;
-    }
-    return `I am currently operating in **Offline Mode**. Please enter a valid ${provider === 'google' ? 'Google Gemini' : 'OpenAI'} API key in Settings to unlock dynamic responses.`;
   };
 
   const saveSettings = async () => {
@@ -658,7 +683,7 @@ export default function App() {
                 ) : currentMode === 'canvas' ? (
                   <span className="flex items-center gap-1 text-[10px] bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full border border-yellow-500/30 font-bold tracking-wide animate-pulse"><Layout className="w-3 h-3" /> CANVAS</span>
                 ) : !activeKey ? (
-                  <span className="flex items-center gap-1 text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded border border-white/5"><WifiOff className="w-3 h-3" /> Offline</span>
+                  <span className="flex items-center gap-1 text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded border border-white/5"><WifiOff className="w-3 h-3" /> Offline + DDG</span>
                 ) : (
                   <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/20 uppercase">{provider} ACTIVE</span>
                 )}
@@ -681,7 +706,7 @@ export default function App() {
                   {selectedAI ? <Bot className="w-10 h-10 text-cyan-400" /> : currentMode === 'creative' ? <Paintbrush className="w-10 h-10 text-pink-400" /> : currentMode === 'canvas' ? <Layout className="w-10 h-10 text-yellow-400" /> : <Monitor className="w-10 h-10" style={{ color: theme.color }} />}
                 </div>
               </div>
-              <div><h2 className="text-3xl font-bold text-white mb-2">{selectedAI ? `Talking to ${selectedAI.name}.` : currentMode === 'creative' ? "Creative Mode Active." : currentMode === 'canvas' ? "Canvas Engine Ready." : "System Online."}</h2><p className="text-slate-400">{selectedAI ? (selectedAI.isRoleplay ? "Roleplay Mode Active. Internet disabled." : "Custom Persona Active.") : currentMode === 'creative' ? "Generates images via Pollinations AI." : currentMode === 'canvas' ? "Builds single-file web apps instantly." : (activeKey ? `Connected via ${provider.toUpperCase()} Provider.` : "Running in Offline Mode.")}</p></div>
+              <div><h2 className="text-3xl font-bold text-white mb-2">{selectedAI ? `Talking to ${selectedAI.name}.` : currentMode === 'creative' ? "Creative Mode Active." : currentMode === 'canvas' ? "Canvas Engine Ready." : "System Online."}</h2><p className="text-slate-400">{selectedAI ? (selectedAI.isRoleplay ? "Roleplay Mode Active. Internet disabled." : "Custom Persona Active.") : currentMode === 'creative' ? "Generates images via Pollinations AI." : currentMode === 'canvas' ? "Builds single-file web apps instantly." : (activeKey ? `Connected via ${provider.toUpperCase()} Provider.` : "Running in Offline Mode with DuckDuckGo Search.")}</p></div>
             </div>
           ) : (
             <div className="max-w-3xl w-full mx-auto space-y-6 flex flex-col flex-1">
