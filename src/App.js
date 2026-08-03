@@ -27,7 +27,7 @@ import {
   signOut 
 } from 'firebase/auth';
 
-// --- 🧠 INTERNAL KNOWLEDGE BASE ---
+// --- INTERNAL KNOWLEDGE BASE ---
 const LOCAL_BRAIN = [
   { 
     triggers: ["who are you", "what are you", "your name"], 
@@ -39,7 +39,7 @@ const LOCAL_BRAIN = [
   },
   { 
     triggers: ["hello", "hi"], 
-    response: "Greetings. Systems online. 🚀" 
+    response: "Greetings. Systems online." 
   }
 ];
 
@@ -441,7 +441,6 @@ export default function App() {
       if (entry.triggers.some(t => lowerInput.includes(t))) return entry.response;
     }
 
-    // Try fetching live web search from DuckDuckGo Instant Answer API
     const searchResult = await fetchDuckDuckGoSearch(text);
     if (searchResult) return searchResult;
 
@@ -721,7 +720,6 @@ export default function App() {
                       remarkPlugins={[remarkGfm, remarkMath]} 
                       rehypePlugins={[rehypeKatex]}
                       components={{ 
-                        // Scrollable Markdown Tables
                         table({node, ...props}) {
                           return (
                             <div className="w-full overflow-x-auto my-3 rounded-xl border border-white/10">
@@ -735,7 +733,6 @@ export default function App() {
                         td({node, ...props}) {
                           return <td className="p-2.5 text-xs border-b border-white/5 text-slate-300" {...props} />;
                         },
-                        // Code Blocks & Canvas Launcher
                         code({node, inline, className, children, ...props}) {
                           const match = /language-(\w+)/.exec(className || '');
                           const codeString = String(children).replace(/\n$/, '');
