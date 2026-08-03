@@ -11,7 +11,6 @@ export default async function handler(req, res) {
     }
 
     // 🧗 GOOGLE & OPENAI MODEL FALLBACK LADDERS
-    // Updated with GA 2026 Google API model strings
     const GEMINI_LADDER = [
       'gemini-3.6-flash',
       'gemini-3.5-flash',
@@ -51,7 +50,11 @@ export default async function handler(req, res) {
     }
 
     const timeContext = `[CURRENT REAL-WORLD DATE AND TIME]: ${formattedTimeStr} (${targetTimeZone}). You MUST use this real-time clock whenever asked for current date, time, year, or temporal context.`;
-    const combinedSystemPrompt = systemPrompt ? `${systemPrompt}\n\n${timeContext}` : timeContext;
+    
+    // Safety directive preventing reasoning/drafting leakage
+    const outputDirective = `STRICT OUTPUT DIRECTIVE: Respond ONLY with your direct final output. Never reveal, print, or format internal thoughts, drafting steps, reasoning processes, or planning notes in your response.`;
+    
+    const combinedSystemPrompt = `${outputDirective}\n\n${systemPrompt ? `${systemPrompt}\n\n${timeContext}` : timeContext}`;
 
     let replyText = '';
     let lastError = null;
@@ -70,7 +73,7 @@ export default async function handler(req, res) {
             parts: [{ text: m.content || '' }]
           }));
 
-          // Only attach google_search tool to standard Gemini models, as Gemma models throw 400 when tool payload is present
+          // Only attach google_search tool to standard Gemini models
           const isStandardGemini = currentModel.startsWith('gemini');
           const payload = {
             systemInstruction: {
