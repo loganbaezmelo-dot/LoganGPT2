@@ -50,17 +50,29 @@ export default async function handler(req, res) {
     }
 
     const timeContext = `[CURRENT REAL-WORLD DATE AND TIME]: ${formattedTimeStr} (${targetTimeZone}).`;
-    const baseSystemInstruction = systemPrompt || "You are LoganGPT, an enterprise AI workspace.";
-    const combinedSystemPrompt = `${baseSystemInstruction}\n\nSTRICT RULE: Never output internal planning logs, analysis steps, or self-dialogue. Speak directly to the user.\n\n${timeContext}`;
+    
+    const personaInstruction = systemPrompt && systemPrompt.trim() 
+      ? systemPrompt.trim() 
+      : "You are LoganGPT, an enterprise AI workspace.";
 
-    const lastUserMsg = messages[messages.length - 1]?.content?.toLowerCase() || '';
-    let smartPrefill = "Hello!";
-    if (lastUserMsg.includes('thank') || lastUserMsg.includes('thx')) {
-      smartPrefill = "You're welcome!";
-    } else if (lastUserMsg.includes('hi') || lastUserMsg.includes('hello') || lastUserMsg.includes('hey')) {
-      smartPrefill = "Hello!";
-    } else {
-      smartPrefill = "Here is";
+    const combinedSystemPrompt = `${personaInstruction}\n\nSTRICT BEHAVIOR RULES:\n1. Adopt the identity, tone, and character specified above.\n2. Output ONLY the direct in-character response to the user. Never print internal planning logs, analysis steps, or self-dialogue.\n\n${timeContext}`;
+
+    let rawContents = messages.map(m => ({
+      role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
+      parts: [{ text: m.content || '' }]
+    })).filter(c => c.parts[0].text.trim() !== '');
+
+    const sanitizedContents = [];
+    for (const msg of rawContents) {
+      if (sanitizedContents.length > 0 && sanitizedContents[sanitizedContents.length - 1].role === msg.role) {
+        sanitizedContents[sanitizedContents.length - 1].parts[0].text += `\n${msg.parts[0].text}`;
+      } else {
+        sanitizedContents.push({ role: msg.role, parts: [{ text: msg.parts[0].text }] });
+      }
+    }
+
+    if (sanitizedContents.length === 0) {
+      sanitizedContents.push({ role: 'user', parts: [{ text: 'Hello' }] });
     }
 
     let replyText = '';
@@ -72,29 +84,17 @@ export default async function handler(req, res) {
         console.log(`[LoganGPT API] Trying ${provider.toUpperCase()} model: ${currentModel}`);
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 35000);
+        const timeoutId = setTimeout(() => controller.abort(), 25000);
 
         if (provider === 'google') {
           const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`;
           
-          const contents = messages.map(m => ({
-            role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
-            parts: [{ text: m.content || '' }]
-          }));
-
-          if (contents.length > 0 && contents[contents.length - 1].role === 'user') {
-            contents.push({
-              role: 'model',
-              parts: [{ text: smartPrefill }]
-            });
-          }
-
           const isStandardGemini = currentModel.startsWith('gemini');
           const payload = {
             systemInstruction: {
               parts: [{ text: combinedSystemPrompt }]
             },
-            contents: contents,
+            contents: sanitizedContents,
             generationConfig: {
               temperature: 0.7,
               topP: 0.95,
@@ -118,8 +118,7 @@ export default async function handler(req, res) {
             throw new Error(data.error?.message || `HTTP ${response.status}`);
           }
 
-          const rawCandidate = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          replyText = rawCandidate.startsWith(smartPrefill) ? rawCandidate : `${smartPrefill} ${rawCandidate}`;
+          replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
           if (replyText.trim()) {
             successfulModel = currentModel;
@@ -142,9 +141,7 @@ export default async function handler(req, res) {
             body: JSON.stringify({
               model: currentModel,
               messages: formattedMessages,
-              temperature: 0.7,
-              frequency_penalty: 0.5,
-              presence_penalty: 0.3
+              temperature: 0.7
             }),
             signal: controller.signal
           });
@@ -165,7 +162,7 @@ export default async function handler(req, res) {
         }
 
       } catch (err) {
-        const errorMsg = err.name === 'AbortError' ? 'Request timed out after 35s' : err.message;
+        const errorMsg = err.name === 'AbortError' ? 'Request timed out after 25s' : err.message;
         console.warn(`[LoganGPT API] Model ${currentModel} failed: ${errorMsg}. Trying next model...`);
         lastError = errorMsg;
       }
