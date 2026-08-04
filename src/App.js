@@ -340,7 +340,7 @@ export default function App() {
     }
   }, [activeChatId, chats, customAIs]);
 
-  // Fetch Messages
+  // Fetch Messages with real-time snapshot sync fix
   useEffect(() => {
     if (!user || !activeChatId) {
       setMessages([]);
@@ -356,6 +356,11 @@ export default function App() {
 
       if (msgs.length > 0) {
         setMessages(msgs);
+        // Automatically turn off loading state once assistant message arrives from Firestore
+        const lastMsg = msgs[msgs.length - 1];
+        if (lastMsg && (lastMsg.role === 'assistant' || lastMsg.role === 'model')) {
+          setIsLoading(false);
+        }
       }
 
       const lastCanvasMsg = [...msgs].reverse().find(m => (m.role === 'assistant' || m.role === 'model') && m.text && m.text.includes('```html'));
@@ -449,7 +454,7 @@ export default function App() {
 
   const handleSend = async (e) => {
     e.preventDefault();
-    if (!input.trim() || !user) return;
+    if (!input.trim() || !user || isLoading) return;
 
     const userText = input.trim();
     setInput('');
@@ -478,9 +483,6 @@ export default function App() {
     }
 
     let currentChatId = activeChatId;
-
-    const optimisticUserMsg = { id: `opt-user-${Date.now()}`, role: 'user', text: userText, timestamp: { seconds: Date.now() / 1000 } };
-    setMessages((prev) => [...prev, optimisticUserMsg]);
 
     const currentKey = activeKey.trim();
 
@@ -560,8 +562,6 @@ export default function App() {
       const exactErrorText = `❌ **Exact Error Message:**\n\`\`\`\n${err.message || err}\n\`\`\``;
       const fallbackText = await queryLocalBrain(userText);
       const combinedReply = `${exactErrorText}\n\n---\n\n*Falling back to web search & local brain:*\n${fallbackText}`;
-
-      setMessages((prev) => [...prev, { id: `opt-err-${Date.now()}`, role: 'assistant', text: combinedReply, timestamp: { seconds: Date.now() / 1000 } }]);
 
       if (currentChatId) {
         await addDoc(collection(db, 'users', user.uid, 'chats', currentChatId, 'messages'), {
@@ -928,7 +928,7 @@ export default function App() {
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">OpenAI API Key</label>
                     <a 
-                      href="https://platform.openai.com/api-keys)" 
+                      href="https://platform.openai.com/api-keys" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1 transition-colors font-medium"
