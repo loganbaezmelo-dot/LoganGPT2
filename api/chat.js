@@ -31,6 +31,7 @@ export default async function handler(req, res) {
     const modelLadder = provider === 'google' ? GEMINI_LADDER : OPENAI_LADDER;
     const targetTimeZone = userTimeZone || 'America/New_York';
 
+    // --- 🕒 ADVANCED TIME ZONE & FORMATTING LOGIC ---
     let formattedTimeStr = '';
     try {
       const now = new Date();
@@ -42,21 +43,17 @@ export default async function handler(req, res) {
         day: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
+        second: '2-digit',
         hour12: true
       });
     } catch (e) {
       formattedTimeStr = new Date().toISOString();
     }
 
-    const timeContext = `Current Time: ${formattedTimeStr} (${targetTimeZone}).`;
-
-    // Hardened constraint forcing conversational output only and blocking thought leaks
-    const combinedSystemPrompt = `You are LoganGPT, an enterprise AI workspace. 
-    Never output internal thoughts, analysis logs, user intent breakdowns, or planning steps. 
-    Always respond directly to the user in a natural, professional tone.
+    const timeContext = `[CURRENT REAL-WORLD DATE AND TIME]: ${formattedTimeStr} (${targetTimeZone}). You MUST use this real-time clock whenever asked for current date, time, year, or temporal context.`;
     
-    ${systemPrompt || ''}
-    ${timeContext}`;
+    const corePersona = systemPrompt || "You are LoganGPT, an enterprise AI workspace.";
+    const behavioralDirective = "Provide a direct, conversational response to the user's message. Do not output planning logs, user intent breakdowns, or internal thoughts.";
 
     let replyText = '';
     let lastError = null;
@@ -69,16 +66,23 @@ export default async function handler(req, res) {
         if (provider === 'google') {
           const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`;
           
-          const contents = messages.map(m => ({
-            role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
-            parts: [{ text: m.content || '' }]
-          }));
+          const contents = [
+            {
+              role: 'user',
+              parts: [{ text: `[System Setup]\nPersona: ${corePersona}\nRule: ${behavioralDirective}\n${timeContext}\n\nAcknowledge and say hello ready for user input.` }]
+            },
+            {
+              role: 'model',
+              parts: [{ text: "Understood. Systems online. How can I help you today?" }]
+            },
+            ...messages.map(m => ({
+              role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
+              parts: [{ text: m.content || '' }]
+            }))
+          ];
 
           const isStandardGemini = currentModel.startsWith('gemini');
           const payload = {
-            systemInstruction: {
-              parts: [{ text: combinedSystemPrompt }]
-            },
             contents: contents,
             ...(isStandardGemini ? { tools: [{ google_search: {} }] } : {})
           };
@@ -104,7 +108,7 @@ export default async function handler(req, res) {
           const endpoint = 'https://api.openai.com/v1/chat/completions';
           
           const formattedMessages = [
-            { role: 'system', content: combinedSystemPrompt },
+            { role: 'system', content: `${corePersona}\n${behavioralDirective}\n${timeContext}` },
             ...messages
           ];
 
