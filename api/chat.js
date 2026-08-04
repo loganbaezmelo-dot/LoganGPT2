@@ -95,6 +95,11 @@ export default async function handler(req, res) {
               parts: [{ text: combinedSystemPrompt }]
             },
             contents: contents,
+            generationConfig: {
+              temperature: 0.7,
+              topP: 0.95,
+              maxOutputTokens: 2048
+            },
             ...(isStandardGemini ? { tools: [{ google_search: {} }] } : {})
           };
 
@@ -136,7 +141,10 @@ export default async function handler(req, res) {
             },
             body: JSON.stringify({
               model: currentModel,
-              messages: formattedMessages
+              messages: formattedMessages,
+              temperature: 0.7,
+              frequency_penalty: 0.5,
+              presence_penalty: 0.3
             }),
             signal: controller.signal
           });
