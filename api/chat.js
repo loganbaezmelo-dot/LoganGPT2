@@ -1,6 +1,52 @@
 export const config = {
-  maxDuration: 60, // Extends Vercel Serverless Function timeout to prevent hanging on long generations
+  maxDuration: 60, // Extends Vercel Serverless Function timeout to prevent hanging
 };
+
+// Helper function to extract search keywords and query DuckDuckGo Instant Answer API
+async function fetchDuckDuckGoContext(userText) {
+  try {
+    if (!userText || userText.trim().length < 3) return null;
+
+    // Filter out common conversational stop words to isolate main search terms/keywords
+    const stopWords = new Set([
+      'what', 'is', 'a', 'the', 'how', 'about', 'tell', 'me', 'who', 'where',
+      'when', 'why', 'can', 'you', 'give', 'information', 'on', 'about', 'for',
+      'does', 'do', 'did', 'would', 'could', 'should', 'with', 'and', 'or', 'in'
+    ]);
+
+    const words = userText.replace(/[^\w\s]/gi, '').split(/\s+/);
+    const keywords = words.filter(w => w.length > 1 && !stopWords.has(w.toLowerCase())).join(' ');
+
+    if (!keywords || keywords.trim().length === 0) return null;
+
+    // Query DuckDuckGo Instant Answer API endpoint using extracted keywords
+    const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(keywords)}&format=json&no_html=1&skip_disambig=1`;
+    const response = await fetch(ddgUrl);
+    
+    if (!response.ok) return null;
+
+    const data = await response.json();
+
+    // Collect abstract, definition, or primary topic snippets
+    let contextSnippet = data.AbstractText || data.Definition || '';
+
+    if (!contextSnippet && data.RelatedTopics && data.RelatedTopics.length > 0) {
+      const firstTopic = data.RelatedTopics.find(t => t.Text);
+      if (firstTopic) {
+        contextSnippet = firstTopic.Text;
+      }
+    }
+
+    if (contextSnippet.trim()) {
+      return `[DUCKDUCKGO SEARCH CONTEXT FOR '${keywords}']: ${contextSnippet}`;
+    }
+
+    return null;
+  } catch (err) {
+    console.warn('[DuckDuckGo Search Error]:', err.message);
+    return null;
+  }
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -53,13 +99,19 @@ export default async function handler(req, res) {
       formattedTimeStr = new Date().toISOString();
     }
 
+    const lastUserMessageObj = messages.slice().reverse().find(m => m.role === 'user');
+    const lastUserText = lastUserMessageObj?.content || '';
+
+    // Fetch DuckDuckGo context using isolated keywords
+    const ddgContext = await fetchDuckDuckGoContext(lastUserText);
+
     const timeContext = `[CURRENT REAL-WORLD DATE AND TIME]: ${formattedTimeStr} (${targetTimeZone}).`;
     
     const personaInstruction = systemPrompt && systemPrompt.trim() 
       ? systemPrompt.trim() 
       : "You are LoganGPT, an enterprise AI workspace.";
 
-    const combinedSystemPrompt = `${personaInstruction}\n\nSTRICT BEHAVIOR RULES:\n1. Adopt the identity, tone, and character specified above.\n2. Output ONLY the direct in-character response to the user. Never print internal planning logs, analysis steps, or self-dialogue.\n\n${timeContext}`;
+    const combinedSystemPrompt = `${personaInstruction}\n\nSTRICT BEHAVIOR RULES:\n1. Adopt the identity, tone, and character specified above.\n2. Output ONLY the direct in-character response to the user. Never print internal planning logs, analysis steps, or self-dialogue.\n\n${timeContext}${ddgContext ? `\n\n${ddgContext}` : ''}`;
 
     let rawContents = messages.map(m => ({
       role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
@@ -88,7 +140,7 @@ export default async function handler(req, res) {
         console.log(`[LoganGPT API] Trying ${provider.toUpperCase()} model: ${currentModel}`);
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 55000); // Set right under Vercel's 60s cap
+        const timeoutId = setTimeout(() => controller.abort(), 55000);
 
         if (provider === 'google') {
           const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`;
