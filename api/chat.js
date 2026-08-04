@@ -31,7 +31,6 @@ export default async function handler(req, res) {
     const modelLadder = provider === 'google' ? GEMINI_LADDER : OPENAI_LADDER;
     const targetTimeZone = userTimeZone || 'America/New_York';
 
-    // --- 🕒 FULL ADVANCED TIME LOGIC & FORMATTING ---
     let formattedTimeStr = '';
     try {
       const now = new Date();
@@ -50,10 +49,10 @@ export default async function handler(req, res) {
       formattedTimeStr = new Date().toISOString();
     }
 
-    const timeContext = `[CURRENT REAL-WORLD DATE AND TIME]: ${formattedTimeStr} (${targetTimeZone}). You MUST use this real-time clock whenever asked for current date, time, year, or temporal context.`;
+    const timeContext = `[CURRENT REAL-WORLD DATE AND TIME]: ${formattedTimeStr} (${targetTimeZone}).`;
     
     const baseSystemInstruction = systemPrompt || "You are LoganGPT, an enterprise AI workspace.";
-    const combinedSystemPrompt = `${baseSystemInstruction}\n\nSTRICT RULE: Never output internal thoughts, planning logs, analysis steps, or drafted outlines. Always respond directly with your final conversational answer.\n\n${timeContext}`;
+    const combinedSystemPrompt = `${baseSystemInstruction}\n\nCRITICAL DIRECTIVE: Never output internal thoughts, planning logs, analysis steps, or drafted outlines. Speak directly to the user.\n\n${timeContext}`;
 
     let replyText = '';
     let lastError = null;
@@ -66,10 +65,19 @@ export default async function handler(req, res) {
         if (provider === 'google') {
           const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`;
           
+          // Map user messages safely
           const contents = messages.map(m => ({
             role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
             parts: [{ text: m.content || '' }]
           }));
+
+          // If the last message is from the user, force a model prefix turn to block thinking blocks
+          if (contents.length > 0 && contents[contents.length - 1].role === 'user') {
+            contents.push({
+              role: 'model',
+              parts: [{ text: "Hello!" }] // Prefills the response start to cut off internal reasoning
+            });
+          }
 
           const isStandardGemini = currentModel.startsWith('gemini');
           const payload = {
@@ -92,7 +100,10 @@ export default async function handler(req, res) {
             throw new Error(data.error?.message || `HTTP ${response.status}`);
           }
 
-          replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          const rawCandidate = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          // Prepend "Hello!" back if it was used as a prefill anchor
+          replyText = rawCandidate.startsWith('Hello!') ? rawCandidate : `Hello! ${rawCandidate}`;
+          
           if (replyText.trim()) {
             successfulModel = currentModel;
             break;
