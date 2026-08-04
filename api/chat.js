@@ -151,7 +151,9 @@ export default async function handler(req, res) {
 
     const accuracyRules = `\n\nHARDWARE SPECIFICATION GUARDS:\n- Verify hardware differences carefully. For example, the base Nintendo Switch 2 features an 8-inch LCD screen, whereas the Nintendo Switch OLED model is a previous-generation variant. Do not mix specs between hardware revisions or generations.`;
 
-    const combinedSystemPrompt = `${personaInstruction}\n\nSTRICT BEHAVIOR RULES:\n1. Adopt the identity, tone, and character specified above.\n2. Output ONLY the direct in-character response to the user. Never print internal planning logs, analysis steps, or self-dialogue.${imageFormattingRules}${accuracyRules}\n\n${timeContext}${wikiContext ? `\n\n${wikiContext}` : ''}`;
+    const elicitationRules = `\n\nSUGGESTION BUTTONS / ELICITATIONS:\nWhen offering logical next steps, options, or follow-up prompts to the user, you may optionally include an ElicitationsGroup block using this exact format:\n<ElicitationsGroup message="Where should we take this next?">\n  <Elicitation label="Option Label Here" query="Exact text to send when clicked" />\n  <Elicitation label="Another Option" query="Another exact prompt to send" />\n</ElicitationsGroup>`;
+
+    const combinedSystemPrompt = `${personaInstruction}\n\nSTRICT BEHAVIOR RULES:\n1. Adopt the identity, tone, and character specified above.\n2. Output ONLY the direct in-character response to the user. Never print internal planning logs, analysis steps, or self-dialogue.${imageFormattingRules}${accuracyRules}${elicitationRules}\n\n${timeContext}${wikiContext ? `\n\n${wikiContext}` : ''}`;
 
     let rawContents = recentMessages.map(m => ({
       role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
