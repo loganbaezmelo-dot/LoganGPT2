@@ -51,8 +51,9 @@ export default async function handler(req, res) {
 
     const timeContext = `[CURRENT REAL-WORLD DATE AND TIME]: ${formattedTimeStr} (${targetTimeZone}).`;
     
+    // Strict behavioral control preventing thought leaks and meta-commentary
     const baseSystemInstruction = systemPrompt || "You are LoganGPT, an enterprise AI workspace.";
-    const combinedSystemPrompt = `${baseSystemInstruction}\n\nCRITICAL DIRECTIVE: Never output internal thoughts, planning logs, analysis steps, or drafted outlines. Speak directly to the user.\n\n${timeContext}`;
+    const combinedSystemPrompt = `${baseSystemInstruction}\n\nCORE RULES:\n1. Never output internal planning logs, analysis steps, or self-dialogue (e.g., 'Wait, I just said that!').\n2. Always respond directly and naturally to the user's latest input.\n\n${timeContext}`;
 
     let replyText = '';
     let lastError = null;
@@ -65,19 +66,10 @@ export default async function handler(req, res) {
         if (provider === 'google') {
           const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`;
           
-          // Map user messages safely
           const contents = messages.map(m => ({
             role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
             parts: [{ text: m.content || '' }]
           }));
-
-          // If the last message is from the user, force a model prefix turn to block thinking blocks
-          if (contents.length > 0 && contents[contents.length - 1].role === 'user') {
-            contents.push({
-              role: 'model',
-              parts: [{ text: "Hello!" }] // Prefills the response start to cut off internal reasoning
-            });
-          }
 
           const isStandardGemini = currentModel.startsWith('gemini');
           const payload = {
@@ -100,10 +92,7 @@ export default async function handler(req, res) {
             throw new Error(data.error?.message || `HTTP ${response.status}`);
           }
 
-          const rawCandidate = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          // Prepend "Hello!" back if it was used as a prefill anchor
-          replyText = rawCandidate.startsWith('Hello!') ? rawCandidate : `Hello! ${rawCandidate}`;
-          
+          replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
           if (replyText.trim()) {
             successfulModel = currentModel;
             break;
