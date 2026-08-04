@@ -51,9 +51,9 @@ export default async function handler(req, res) {
 
     const timeContext = `[CURRENT REAL-WORLD DATE AND TIME]: ${formattedTimeStr} (${targetTimeZone}).`;
     const baseSystemInstruction = systemPrompt || "You are LoganGPT, an enterprise AI workspace.";
-    const combinedSystemPrompt = `${baseSystemInstruction}\n\nCRITICAL RULE: Never output internal thoughts, planning logs, analysis steps, or self-dialogue. Speak directly to the user.\n\n${timeContext}`;
+    const combinedSystemPrompt = `${baseSystemInstruction}\n\nSTRICT RULE: Never output internal planning logs, analysis steps, or self-dialogue. Speak directly to the user.\n\n${timeContext}`;
 
-    // Determine smart prefill based on the last user message to avoid robotic repetition
+    // Smart prefill determination based on last user prompt
     const lastUserMsg = messages[messages.length - 1]?.content?.toLowerCase() || '';
     let smartPrefill = "Hello!";
     if (lastUserMsg.includes('thank') || lastUserMsg.includes('thx')) {
@@ -80,7 +80,7 @@ export default async function handler(req, res) {
             parts: [{ text: m.content || '' }]
           }));
 
-          // Force prefill anchor to cut off model thinking loops
+          // Safely append prefill anchor without breaking schema validation
           if (contents.length > 0 && contents[contents.length - 1].role === 'user') {
             contents.push({
               role: 'model',
@@ -111,7 +111,7 @@ export default async function handler(req, res) {
 
           const rawCandidate = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
           replyText = rawCandidate.startsWith(smartPrefill) ? rawCandidate : `${smartPrefill} ${rawCandidate}`;
-          
+
           if (replyText.trim()) {
             successfulModel = currentModel;
             break;
