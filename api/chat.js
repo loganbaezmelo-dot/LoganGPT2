@@ -105,8 +105,10 @@ export default async function handler(req, res) {
     const lastUserMessageObj = messages.slice().reverse().find(m => m.role === 'user');
     const lastUserText = lastUserMessageObj?.content || '';
 
-    // Fetch Wikipedia article summary context using extracted keywords
-    const wikiContext = await fetchWikipediaContext(lastUserText);
+    const isPersonaActive = systemPrompt && systemPrompt.trim().length > 0 && !systemPrompt.includes("enterprise AI workspace");
+
+    // Only inject Wikipedia context for standard queries (bypasses during roleplay)
+    const wikiContext = !isPersonaActive ? await fetchWikipediaContext(lastUserText) : null;
 
     const timeContext = `[CURRENT REAL-WORLD DATE AND TIME]: ${formattedTimeStr} (${targetTimeZone}).`;
     
@@ -114,7 +116,9 @@ export default async function handler(req, res) {
       ? systemPrompt.trim() 
       : "You are LoganGPT, an enterprise AI workspace.";
 
-    const combinedSystemPrompt = `${personaInstruction}\n\nSTRICT BEHAVIOR RULES:\n1. Adopt the identity, tone, and character specified above.\n2. Output ONLY the direct in-character response to the user. Never print internal planning logs, analysis steps, or self-dialogue.\n\n${timeContext}${wikiContext ? `\n\n${wikiContext}` : ''}`;
+    const imageFormattingRules = `\n\nIMAGE GENERATION INSTRUCTIONS:\nWhen the user asks to generate, create, or draw an image, return ONLY a Markdown image tag using Pollinations AI with the high-quality Flux model params like this:\n![Generated Image](https://image.pollinations.ai/prompt/<URL_ENCODED_PROMPT_HERE>?model=flux&nologo=true)`;
+
+    const combinedSystemPrompt = `${personaInstruction}\n\nSTRICT BEHAVIOR RULES:\n1. Adopt the identity, tone, and character specified above.\n2. Output ONLY the direct in-character response to the user. Never print internal planning logs, analysis steps, or self-dialogue.${imageFormattingRules}\n\n${timeContext}${wikiContext ? `\n\n${wikiContext}` : ''}`;
 
     let rawContents = messages.map(m => ({
       role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
