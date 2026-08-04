@@ -55,7 +55,7 @@ export default async function handler(req, res) {
       ? systemPrompt.trim() 
       : "You are LoganGPT, an enterprise AI workspace.";
 
-    const combinedSystemPrompt = `${personaInstruction}\n\nSTRICT OUTPUT REQUIREMENT:\nDo not print analysis, outlines, user echo, or metadata. Output ONLY the direct final chat response to the user.\n\n${timeContext}`;
+    const combinedSystemPrompt = `${personaInstruction}\n\nSTRICT BEHAVIOR RULES:\n1. Adopt the identity, tone, and character specified above.\n2. Output ONLY the direct in-character response to the user. Never print internal planning logs, analysis steps, or self-dialogue.\n\n${timeContext}`;
 
     let rawContents = messages.map(m => ({
       role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
@@ -90,19 +90,25 @@ export default async function handler(req, res) {
           const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`;
           
           const isStandardGemini = currentModel.startsWith('gemini');
+          const isGemini25 = currentModel.includes('2.5');
+
+          const generationConfig = {
+            temperature: 0.7,
+            topP: 0.95,
+            maxOutputTokens: 2048
+          };
+
+          // Only attach thinkingBudget to Gemini 2.5 models that explicitly support it
+          if (isGemini25) {
+            generationConfig.thinkingConfig = { thinkingBudget: 0 };
+          }
+
           const payload = {
             systemInstruction: {
               parts: [{ text: combinedSystemPrompt }]
             },
             contents: sanitizedContents,
-            generationConfig: {
-              temperature: 0.7,
-              topP: 0.95,
-              maxOutputTokens: 2048,
-              thinkingConfig: {
-                thinkingBudget: 0 // Disables internal reasoning/planning leaks in Flash output
-              }
-            },
+            generationConfig: generationConfig,
             ...(isStandardGemini ? { tools: [{ google_search: {} }] } : {})
           };
 
@@ -121,7 +127,6 @@ export default async function handler(req, res) {
             throw new Error(data.error?.message || `HTTP ${response.status}`);
           }
 
-          // Strip any accidental thought prefixes if returned in parts
           const parts = data.candidates?.[0]?.content?.parts || [];
           const textParts = parts.filter(p => !p.thought).map(p => p.text);
           replyText = textParts.join('').trim() || parts.map(p => p.text).join('').trim();
