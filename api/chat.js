@@ -31,6 +31,7 @@ export default async function handler(req, res) {
     const modelLadder = provider === 'google' ? GEMINI_LADDER : OPENAI_LADDER;
     const targetTimeZone = userTimeZone || 'America/New_York';
 
+    // --- 🕒 FULL ADVANCED TIME LOGIC & FORMATTING ---
     let formattedTimeStr = '';
     try {
       const now = new Date();
@@ -49,9 +50,8 @@ export default async function handler(req, res) {
       formattedTimeStr = new Date().toISOString();
     }
 
-    const timeContext = `[CURRENT REAL-WORLD DATE AND TIME]: ${formattedTimeStr} (${targetTimeZone}).`;
+    const timeContext = `[CURRENT REAL-WORLD DATE AND TIME]: ${formattedTimeStr} (${targetTimeZone}). You MUST use this real-time clock whenever asked for current date, time, year, or temporal context.`;
     
-    // Strict system instruction forcing final output only
     const baseSystemInstruction = systemPrompt || "You are LoganGPT, an enterprise AI workspace.";
     const combinedSystemPrompt = `${baseSystemInstruction}\n\nSTRICT RULE: Never output internal thoughts, planning logs, analysis steps, or drafted outlines. Always respond directly with your final conversational answer.\n\n${timeContext}`;
 
