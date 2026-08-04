@@ -2,12 +2,17 @@ export const config = {
   maxDuration: 60, // Extends Vercel Serverless Function timeout
 };
 
-// Helper function to extract search keywords and query the Wikipedia REST API
+// Helper function to extract search keywords and query the Wikipedia REST API safely
 async function fetchWikipediaContext(userText) {
   try {
     if (!userText || userText.trim().length < 3) return null;
 
-    // Filter out common conversational stop words to isolate main search terms
+    // Skip search entirely for common app generation / coding commands
+    const lower = userText.toLowerCase();
+    if (lower.includes('make an app') || lower.includes('build a game') || lower.includes('create a canvas') || lower.includes('generate code')) {
+      return null;
+    }
+
     const stopWords = new Set([
       'what', 'is', 'a', 'the', 'how', 'about', 'tell', 'me', 'who', 'where',
       'when', 'why', 'can', 'you', 'give', 'information', 'on', 'about', 'for',
@@ -19,23 +24,38 @@ async function fetchWikipediaContext(userText) {
 
     if (!keywords || keywords.trim().length === 0) return null;
 
+    // Timeout signal for Wikipedia API (3 seconds max)
+    const wikiController = new AbortController();
+    const wikiTimeout = setTimeout(() => wikiController.abort(), 3000);
+
     // 1. Search Wikipedia for matching page titles
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(keywords)}&format=json&origin=*`;
     const searchRes = await fetch(searchUrl, {
-      headers: { 'User-Agent': 'LoganGPT/1.0 (https://logan-gpt.vercel.app)' }
+      headers: { 'User-Agent': 'LoganGPT/1.0 (https://logan-gpt.vercel.app)' },
+      signal: wikiController.signal
     });
 
-    if (!searchRes.ok) return null;
+    if (!searchRes.ok) {
+      clearTimeout(wikiTimeout);
+      return null;
+    }
+
     const searchData = await searchRes.json();
     const topResult = searchData.query?.search?.[0]?.title;
 
-    if (!topResult) return null;
+    if (!topResult) {
+      clearTimeout(wikiTimeout);
+      return null;
+    }
 
-    // 2. Fetch the article summary for the best matched page title
+    // 2. Fetch article summary
     const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topResult)}`;
     const summaryRes = await fetch(summaryUrl, {
-      headers: { 'User-Agent': 'LoganGPT/1.0 (https://logan-gpt.vercel.app)' }
+      headers: { 'User-Agent': 'LoganGPT/1.0 (https://logan-gpt.vercel.app)' },
+      signal: wikiController.signal
     });
+
+    clearTimeout(wikiTimeout);
 
     if (!summaryRes.ok) return null;
     const summaryData = await summaryRes.json();
@@ -46,7 +66,8 @@ async function fetchWikipediaContext(userText) {
 
     return null;
   } catch (err) {
-    console.warn('[Wikipedia Search Error]:', err.message);
+    // Fail silently so Wikipedia network errors never break the main chat response
+    console.warn('[Wikipedia Search Bypassed]:', err.message);
     return null;
   }
 }
@@ -102,7 +123,7 @@ export default async function handler(req, res) {
       formattedTimeStr = new Date().toISOString();
     }
 
-    // Limit active chat history to recent 10 messages to prevent payload bloat on large generations
+    // Limit active chat history to recent 10 messages
     const recentMessages = messages.length > 10 ? messages.slice(-10) : messages;
 
     const lastUserMessageObj = recentMessages.slice().reverse().find(m => m.role === 'user');
@@ -110,8 +131,11 @@ export default async function handler(req, res) {
 
     const isPersonaActive = systemPrompt && systemPrompt.trim().length > 0 && !systemPrompt.includes("enterprise AI workspace");
 
-    // Only inject Wikipedia context for standard queries (bypasses during roleplay)
-    const wikiContext = !isPersonaActive ? await fetchWikipediaContext(lastUserText) : null;
+    // Only attempt Wikipedia lookup if persona is inactive and call is safely wrapped
+    let wikiContext = null;
+    if (!isPersonaActive) {
+      wikiContext = await fetchWikipediaContext(lastUserText);
+    }
 
     const timeContext = `[CURRENT REAL-WORLD DATE AND TIME]: ${formattedTimeStr} (${targetTimeZone}).`;
     
@@ -257,3 +281,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: err.message || 'Internal Server Error' });
   }
 }
+
