@@ -1,3 +1,7 @@
+export const config = {
+  maxDuration: 60, // Extends Vercel Serverless Function timeout to prevent hanging on long generations
+};
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -84,7 +88,7 @@ export default async function handler(req, res) {
         console.log(`[LoganGPT API] Trying ${provider.toUpperCase()} model: ${currentModel}`);
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 25000);
+        const timeoutId = setTimeout(() => controller.abort(), 55000); // Set right under Vercel's 60s cap
 
         if (provider === 'google') {
           const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`;
@@ -98,7 +102,6 @@ export default async function handler(req, res) {
             maxOutputTokens: 2048
           };
 
-          // Only attach thinkingBudget to Gemini 2.5 models that explicitly support it
           if (isGemini25) {
             generationConfig.thinkingConfig = { thinkingBudget: 0 };
           }
@@ -173,7 +176,7 @@ export default async function handler(req, res) {
         }
 
       } catch (err) {
-        const errorMsg = err.name === 'AbortError' ? 'Request timed out after 25s' : err.message;
+        const errorMsg = err.name === 'AbortError' ? 'Request timed out after 55s' : err.message;
         console.warn(`[LoganGPT API] Model ${currentModel} failed: ${errorMsg}. Trying next model...`);
         lastError = errorMsg;
       }
