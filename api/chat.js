@@ -11,7 +11,7 @@ async function fetchWikipediaContext(userText) {
     const stopWords = new Set([
       'what', 'is', 'a', 'the', 'how', 'about', 'tell', 'me', 'who', 'where',
       'when', 'why', 'can', 'you', 'give', 'information', 'on', 'about', 'for',
-      'does', 'do', 'did', 'would', 'could', 'should', 'with', 'and', 'or', 'in', 'was', 'released'
+      'does', 'do', 'did', 'would', 'could', 'should', 'with', 'and', 'or', 'in', 'was', 'released', 'make', 'an', 'app'
     ]);
 
     const words = userText.replace(/[^\w\s]/gi, '').split(/\s+/);
@@ -102,7 +102,10 @@ export default async function handler(req, res) {
       formattedTimeStr = new Date().toISOString();
     }
 
-    const lastUserMessageObj = messages.slice().reverse().find(m => m.role === 'user');
+    // Limit active chat history to recent 10 messages to prevent payload bloat on large generations
+    const recentMessages = messages.length > 10 ? messages.slice(-10) : messages;
+
+    const lastUserMessageObj = recentMessages.slice().reverse().find(m => m.role === 'user');
     const lastUserText = lastUserMessageObj?.content || '';
 
     const isPersonaActive = systemPrompt && systemPrompt.trim().length > 0 && !systemPrompt.includes("enterprise AI workspace");
@@ -120,7 +123,7 @@ export default async function handler(req, res) {
 
     const combinedSystemPrompt = `${personaInstruction}\n\nSTRICT BEHAVIOR RULES:\n1. Adopt the identity, tone, and character specified above.\n2. Output ONLY the direct in-character response to the user. Never print internal planning logs, analysis steps, or self-dialogue.${imageFormattingRules}\n\n${timeContext}${wikiContext ? `\n\n${wikiContext}` : ''}`;
 
-    let rawContents = messages.map(m => ({
+    let rawContents = recentMessages.map(m => ({
       role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
       parts: [{ text: m.content || '' }]
     })).filter(c => c.parts[0].text.trim() !== '');
@@ -202,7 +205,7 @@ export default async function handler(req, res) {
           
           const formattedMessages = [
             { role: 'system', content: combinedSystemPrompt },
-            ...messages
+            ...recentMessages
           ];
 
           const response = await fetch(endpoint, {
