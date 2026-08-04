@@ -55,7 +55,7 @@ export default async function handler(req, res) {
       ? systemPrompt.trim() 
       : "You are LoganGPT, an enterprise AI workspace.";
 
-    const combinedSystemPrompt = `${personaInstruction}\n\nSTRICT BEHAVIOR RULES:\n1. Adopt the identity, tone, and character specified above.\n2. Output ONLY the direct in-character response to the user. Never print internal planning logs, analysis steps, or self-dialogue.\n\n${timeContext}`;
+    const combinedSystemPrompt = `${personaInstruction}\n\nSTRICT OUTPUT REQUIREMENT:\nDo not print analysis, outlines, user echo, or metadata. Output ONLY the direct final chat response to the user.\n\n${timeContext}`;
 
     let rawContents = messages.map(m => ({
       role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
@@ -72,7 +72,7 @@ export default async function handler(req, res) {
     }
 
     if (sanitizedContents.length === 0) {
-      sanitizedContents.push({ role: 'user', parts: [{ text: 'Hello' }] });
+      sanitizedContents.push({ role: 'user', parts: [{ text: 'Hi' }] });
     }
 
     let replyText = '';
@@ -98,7 +98,10 @@ export default async function handler(req, res) {
             generationConfig: {
               temperature: 0.7,
               topP: 0.95,
-              maxOutputTokens: 2048
+              maxOutputTokens: 2048,
+              thinkingConfig: {
+                thinkingBudget: 0 // Disables internal reasoning/planning leaks in Flash output
+              }
             },
             ...(isStandardGemini ? { tools: [{ google_search: {} }] } : {})
           };
@@ -118,9 +121,12 @@ export default async function handler(req, res) {
             throw new Error(data.error?.message || `HTTP ${response.status}`);
           }
 
-          replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          // Strip any accidental thought prefixes if returned in parts
+          const parts = data.candidates?.[0]?.content?.parts || [];
+          const textParts = parts.filter(p => !p.thought).map(p => p.text);
+          replyText = textParts.join('').trim() || parts.map(p => p.text).join('').trim();
 
-          if (replyText.trim()) {
+          if (replyText) {
             successfulModel = currentModel;
             break;
           }
