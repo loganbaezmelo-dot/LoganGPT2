@@ -7,16 +7,22 @@ async function fetchWikipediaContext(userText) {
   try {
     if (!userText || userText.trim().length < 3) return null;
 
-    // Skip search entirely for common app generation / coding commands
+    // Skip search entirely for app generation, game building, or code requests
     const lower = userText.toLowerCase();
-    if (lower.includes('make an app') || lower.includes('build a game') || lower.includes('create a canvas') || lower.includes('generate code')) {
+    if (
+      lower.includes('make an app') || 
+      lower.includes('build a game') || 
+      lower.includes('create a canvas') || 
+      lower.includes('generate code')
+    ) {
       return null;
     }
 
     const stopWords = new Set([
       'what', 'is', 'a', 'the', 'how', 'about', 'tell', 'me', 'who', 'where',
       'when', 'why', 'can', 'you', 'give', 'information', 'on', 'about', 'for',
-      'does', 'do', 'did', 'would', 'could', 'should', 'with', 'and', 'or', 'in', 'was', 'released', 'make', 'an', 'app'
+      'does', 'do', 'did', 'would', 'could', 'should', 'with', 'and', 'or', 'in', 
+      'was', 'released', 'make', 'an', 'app', 'out', 'display', 'screen'
     ]);
 
     const words = userText.replace(/[^\w\s]/gi, '').split(/\s+/);
@@ -143,7 +149,9 @@ export default async function handler(req, res) {
 
     const imageFormattingRules = `\n\nIMAGE GENERATION INSTRUCTIONS:\nWhen the user asks to generate, create, or draw an image, return ONLY a Markdown image tag using Pollinations AI with the high-quality Flux model params like this:\n![Generated Image](https://image.pollinations.ai/prompt/<URL_ENCODED_PROMPT_HERE>?model=flux&nologo=true)`;
 
-    const combinedSystemPrompt = `${personaInstruction}\n\nSTRICT BEHAVIOR RULES:\n1. Adopt the identity, tone, and character specified above.\n2. Output ONLY the direct in-character response to the user. Never print internal planning logs, analysis steps, or self-dialogue.${imageFormattingRules}\n\n${timeContext}${wikiContext ? `\n\n${wikiContext}` : ''}`;
+    const accuracyRules = `\n\nHARDWARE SPECIFICATION GUARDS:\n- Verify hardware differences carefully. For example, the base Nintendo Switch 2 features an 8-inch LCD screen, whereas the Nintendo Switch OLED model is a previous-generation variant. Do not mix specs between hardware revisions or generations.`;
+
+    const combinedSystemPrompt = `${personaInstruction}\n\nSTRICT BEHAVIOR RULES:\n1. Adopt the identity, tone, and character specified above.\n2. Output ONLY the direct in-character response to the user. Never print internal planning logs, analysis steps, or self-dialogue.${imageFormattingRules}${accuracyRules}\n\n${timeContext}${wikiContext ? `\n\n${wikiContext}` : ''}`;
 
     let rawContents = recentMessages.map(m => ({
       role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
@@ -196,7 +204,6 @@ export default async function handler(req, res) {
             },
             contents: sanitizedContents,
             generationConfig: generationConfig,
-            // FIXED: Using googleSearch (camelCase) instead of google_search (snake_case)
             ...(isStandardGemini ? { tools: [{ googleSearch: {} }] } : {})
           };
 
