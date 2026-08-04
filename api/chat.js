@@ -53,7 +53,6 @@ export default async function handler(req, res) {
     const baseSystemInstruction = systemPrompt || "You are LoganGPT, an enterprise AI workspace.";
     const combinedSystemPrompt = `${baseSystemInstruction}\n\nSTRICT RULE: Never output internal planning logs, analysis steps, or self-dialogue. Speak directly to the user.\n\n${timeContext}`;
 
-    // Smart prefill determination based on last user prompt
     const lastUserMsg = messages[messages.length - 1]?.content?.toLowerCase() || '';
     let smartPrefill = "Hello!";
     if (lastUserMsg.includes('thank') || lastUserMsg.includes('thx')) {
@@ -72,6 +71,9 @@ export default async function handler(req, res) {
       try {
         console.log(`[LoganGPT API] Trying ${provider.toUpperCase()} model: ${currentModel}`);
 
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 35000);
+
         if (provider === 'google') {
           const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`;
           
@@ -80,7 +82,6 @@ export default async function handler(req, res) {
             parts: [{ text: m.content || '' }]
           }));
 
-          // Safely append prefill anchor without breaking schema validation
           if (contents.length > 0 && contents[contents.length - 1].role === 'user') {
             contents.push({
               role: 'model',
@@ -100,9 +101,12 @@ export default async function handler(req, res) {
           const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            signal: controller.signal
           });
 
+          clearTimeout(timeoutId);
+          
           const data = await response.json();
 
           if (!response.ok) {
@@ -133,9 +137,12 @@ export default async function handler(req, res) {
             body: JSON.stringify({
               model: currentModel,
               messages: formattedMessages
-            })
+            }),
+            signal: controller.signal
           });
 
+          clearTimeout(timeoutId);
+          
           const data = await response.json();
 
           if (!response.ok) {
@@ -150,8 +157,9 @@ export default async function handler(req, res) {
         }
 
       } catch (err) {
-        console.warn(`[LoganGPT API] Model ${currentModel} failed: ${err.message}. Trying next model...`);
-        lastError = err.message;
+        const errorMsg = err.name === 'AbortError' ? 'Request timed out after 35s' : err.message;
+        console.warn(`[LoganGPT API] Model ${currentModel} failed: ${errorMsg}. Trying next model...`);
+        lastError = errorMsg;
       }
     }
 
