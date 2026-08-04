@@ -66,7 +66,6 @@ async function fetchWikipediaContext(userText) {
 
     return null;
   } catch (err) {
-    // Fail silently so Wikipedia network errors never break the main chat response
     console.warn('[Wikipedia Search Bypassed]:', err.message);
     return null;
   }
@@ -131,7 +130,6 @@ export default async function handler(req, res) {
 
     const isPersonaActive = systemPrompt && systemPrompt.trim().length > 0 && !systemPrompt.includes("enterprise AI workspace");
 
-    // Only attempt Wikipedia lookup if persona is inactive and call is safely wrapped
     let wikiContext = null;
     if (!isPersonaActive) {
       wikiContext = await fetchWikipediaContext(lastUserText);
@@ -198,7 +196,8 @@ export default async function handler(req, res) {
             },
             contents: sanitizedContents,
             generationConfig: generationConfig,
-            ...(isStandardGemini ? { tools: [{ google_search: {} }] } : {})
+            // FIXED: Using googleSearch (camelCase) instead of google_search (snake_case)
+            ...(isStandardGemini ? { tools: [{ googleSearch: {} }] } : {})
           };
 
           const response = await fetch(endpoint, {
@@ -281,4 +280,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: err.message || 'Internal Server Error' });
   }
 }
-
