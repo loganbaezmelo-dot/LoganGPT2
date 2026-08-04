@@ -1,17 +1,17 @@
 export const config = {
-  maxDuration: 60, // Extends Vercel Serverless Function timeout to prevent hanging
+  maxDuration: 60, // Extends Vercel Serverless Function timeout
 };
 
-// Helper function to extract search keywords and query DuckDuckGo Instant Answer API
-async function fetchDuckDuckGoContext(userText) {
+// Helper function to extract search keywords and query the Wikipedia REST API
+async function fetchWikipediaContext(userText) {
   try {
     if (!userText || userText.trim().length < 3) return null;
 
-    // Filter out common conversational stop words to isolate main search terms/keywords
+    // Filter out common conversational stop words to isolate main search terms
     const stopWords = new Set([
       'what', 'is', 'a', 'the', 'how', 'about', 'tell', 'me', 'who', 'where',
       'when', 'why', 'can', 'you', 'give', 'information', 'on', 'about', 'for',
-      'does', 'do', 'did', 'would', 'could', 'should', 'with', 'and', 'or', 'in'
+      'does', 'do', 'did', 'would', 'could', 'should', 'with', 'and', 'or', 'in', 'was', 'released'
     ]);
 
     const words = userText.replace(/[^\w\s]/gi, '').split(/\s+/);
@@ -19,31 +19,34 @@ async function fetchDuckDuckGoContext(userText) {
 
     if (!keywords || keywords.trim().length === 0) return null;
 
-    // Query DuckDuckGo Instant Answer API endpoint using extracted keywords
-    const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(keywords)}&format=json&no_html=1&skip_disambig=1`;
-    const response = await fetch(ddgUrl);
-    
-    if (!response.ok) return null;
+    // 1. Search Wikipedia for matching page titles
+    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(keywords)}&format=json&origin=*`;
+    const searchRes = await fetch(searchUrl, {
+      headers: { 'User-Agent': 'LoganGPT/1.0 (https://logan-gpt.vercel.app)' }
+    });
 
-    const data = await response.json();
+    if (!searchRes.ok) return null;
+    const searchData = await searchRes.json();
+    const topResult = searchData.query?.search?.[0]?.title;
 
-    // Collect abstract, definition, or primary topic snippets
-    let contextSnippet = data.AbstractText || data.Definition || '';
+    if (!topResult) return null;
 
-    if (!contextSnippet && data.RelatedTopics && data.RelatedTopics.length > 0) {
-      const firstTopic = data.RelatedTopics.find(t => t.Text);
-      if (firstTopic) {
-        contextSnippet = firstTopic.Text;
-      }
-    }
+    // 2. Fetch the article summary for the best matched page title
+    const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topResult)}`;
+    const summaryRes = await fetch(summaryUrl, {
+      headers: { 'User-Agent': 'LoganGPT/1.0 (https://logan-gpt.vercel.app)' }
+    });
 
-    if (contextSnippet.trim()) {
-      return `[DUCKDUCKGO SEARCH CONTEXT FOR '${keywords}']: ${contextSnippet}`;
+    if (!summaryRes.ok) return null;
+    const summaryData = await summaryRes.json();
+
+    if (summaryData.extract) {
+      return `[WIKIPEDIA CONTEXT FOR '${topResult}']: ${summaryData.extract}`;
     }
 
     return null;
   } catch (err) {
-    console.warn('[DuckDuckGo Search Error]:', err.message);
+    console.warn('[Wikipedia Search Error]:', err.message);
     return null;
   }
 }
@@ -102,8 +105,8 @@ export default async function handler(req, res) {
     const lastUserMessageObj = messages.slice().reverse().find(m => m.role === 'user');
     const lastUserText = lastUserMessageObj?.content || '';
 
-    // Fetch DuckDuckGo context using isolated keywords
-    const ddgContext = await fetchDuckDuckGoContext(lastUserText);
+    // Fetch Wikipedia article summary context using extracted keywords
+    const wikiContext = await fetchWikipediaContext(lastUserText);
 
     const timeContext = `[CURRENT REAL-WORLD DATE AND TIME]: ${formattedTimeStr} (${targetTimeZone}).`;
     
@@ -111,7 +114,7 @@ export default async function handler(req, res) {
       ? systemPrompt.trim() 
       : "You are LoganGPT, an enterprise AI workspace.";
 
-    const combinedSystemPrompt = `${personaInstruction}\n\nSTRICT BEHAVIOR RULES:\n1. Adopt the identity, tone, and character specified above.\n2. Output ONLY the direct in-character response to the user. Never print internal planning logs, analysis steps, or self-dialogue.\n\n${timeContext}${ddgContext ? `\n\n${ddgContext}` : ''}`;
+    const combinedSystemPrompt = `${personaInstruction}\n\nSTRICT BEHAVIOR RULES:\n1. Adopt the identity, tone, and character specified above.\n2. Output ONLY the direct in-character response to the user. Never print internal planning logs, analysis steps, or self-dialogue.\n\n${timeContext}${wikiContext ? `\n\n${wikiContext}` : ''}`;
 
     let rawContents = messages.map(m => ({
       role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
