@@ -224,14 +224,21 @@ export default async function handler(req, res) {
             throw new Error(data.error?.message || `HTTP ${response.status}`);
           }
 
-          const parts = data.candidates?.[0]?.content?.parts || [];
+          const candidate = data.candidates?.[0];
+          const finishReason = candidate?.finishReason;
+
+          const parts = candidate?.content?.parts || [];
           const textParts = parts.filter(p => !p.thought).map(p => p.text);
           replyText = textParts.join('').trim() || parts.map(p => p.text).join('').trim();
 
-          if (replyText) {
-            successfulModel = currentModel;
-            break;
+          // Force error if empty to guarantee falling through to next model in ladder
+          if (!replyText) {
+            throw new Error(`Model returned empty text (Finish reason: ${finishReason || 'UNKNOWN'})`);
           }
+
+          successfulModel = currentModel;
+          break;
+
         } else {
           const endpoint = 'https://api.openai.com/v1/chat/completions';
           
@@ -263,10 +270,13 @@ export default async function handler(req, res) {
           }
 
           replyText = data.choices?.[0]?.message?.content || '';
-          if (replyText.trim()) {
-            successfulModel = currentModel;
-            break;
+          
+          if (!replyText.trim()) {
+            throw new Error('Model returned empty text.');
           }
+
+          successfulModel = currentModel;
+          break;
         }
 
       } catch (err) {
