@@ -340,7 +340,7 @@ export default function App() {
     }
   }, [activeChatId, chats, customAIs]);
 
-  // Fetch Messages with real-time snapshot sync fix
+  // Fetch Messages with stable tie-breaker sorting
   useEffect(() => {
     if (!user || !activeChatId) {
       setMessages([]);
@@ -352,11 +352,25 @@ export default function App() {
       const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
       const now = Date.now() / 1000;
-      msgs.sort((a, b) => (a.timestamp?.seconds || now) - (b.timestamp?.seconds || now));
+
+      // Sort primarily by timestamp, with role tie-breaker (user before assistant)
+      msgs.sort((a, b) => {
+        const timeA = a.timestamp?.seconds || now;
+        const timeB = b.timestamp?.seconds || now;
+
+        if (timeA !== timeB) {
+          return timeA - timeB;
+        }
+
+        // Tie-breaker: If timestamps are identical, put 'user' first
+        if (a.role === 'user' && b.role !== 'user') return -1;
+        if (a.role !== 'user' && b.role === 'user') return 1;
+
+        return 0;
+      });
 
       if (msgs.length > 0) {
         setMessages(msgs);
-        // Automatically turn off loading state once assistant message arrives from Firestore
         const lastMsg = msgs[msgs.length - 1];
         if (lastMsg && (lastMsg.role === 'assistant' || lastMsg.role === 'model')) {
           setIsLoading(false);
@@ -928,7 +942,7 @@ export default function App() {
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">OpenAI API Key</label>
                     <a 
-                      href="https://platform.openai.com/api-keys" 
+                      href="[https://platform.openai.com/api-keys](https://platform.openai.com/api-keys)" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1 transition-colors font-medium"
@@ -955,7 +969,7 @@ export default function App() {
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Google Gemini API Key</label>
                     <a 
-                      href="https://aistudio.google.com/app/apikey" 
+                      href="[https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors font-medium"
