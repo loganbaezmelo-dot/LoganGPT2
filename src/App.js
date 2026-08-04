@@ -4,7 +4,7 @@ import {
   Trash2, Monitor, Zap, Cloud, LogOut, Mail, Lock, 
   Key, User, WifiOff, Image as ImageIcon, ExternalLink,
   Paintbrush, Layout, Play, Bot, ToggleLeft, ToggleRight,
-  Copy, Check, Globe
+  Copy, Check, Globe, Sparkles
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -362,7 +362,6 @@ export default function App() {
           return timeA - timeB;
         }
 
-        // Tie-breaker: If timestamps are identical, put 'user' first
         if (a.role === 'user' && b.role !== 'user') return -1;
         if (a.role !== 'user' && b.role === 'user') return 1;
 
@@ -466,11 +465,17 @@ export default function App() {
     return `I am currently operating in **Offline Mode**. Please enter a valid ${provider === 'google' ? 'Google Gemini' : 'OpenAI'} API key in Settings to unlock dynamic reasoning.`;
   };
 
-  const handleSend = async (e) => {
-    e.preventDefault();
-    if (!input.trim() || !user || isLoading) return;
+  const sendQueryDirectly = (promptText) => {
+    setInput(promptText);
+    const fakeEvent = { preventDefault: () => {} };
+    setTimeout(() => {
+      handleSendWithText(promptText);
+    }, 50);
+  };
 
-    const userText = input.trim();
+  const handleSendWithText = async (textToSend) => {
+    if (!textToSend.trim() || !user || isLoading) return;
+
     setInput('');
     setIsLoading(true);
 
@@ -484,7 +489,7 @@ export default function App() {
       'gmt': 'Europe/London', 'bst': 'Europe/London', 'london': 'Europe/London'
     };
     
-    const lowerText = userText.toLowerCase();
+    const lowerText = textToSend.toLowerCase();
     for (const [keyword, tz] of Object.entries(tzMatches)) {
       if (lowerText.includes(`timezone is ${keyword}`) || lowerText.includes(`use ${keyword}`) || lowerText.includes(`i am in ${keyword}`) || lowerText.includes(`i live in ${keyword}`) || lowerText === `i use ${keyword}`) {
         effectiveTimeZone = tz;
@@ -497,13 +502,12 @@ export default function App() {
     }
 
     let currentChatId = activeChatId;
-
     const currentKey = activeKey.trim();
 
     try {
       if (!currentChatId) {
         const chatRef = await addDoc(collection(db, 'users', user.uid, 'chats'), {
-          title: userText.slice(0, 30),
+          title: textToSend.slice(0, 30),
           timestamp: serverTimestamp(),
           aiId: selectedAI?.id || 'logan-default'
         });
@@ -516,17 +520,17 @@ export default function App() {
       }
 
       await addDoc(collection(db, 'users', user.uid, 'chats', currentChatId, 'messages'), {
-        role: 'user', text: userText, timestamp: serverTimestamp()
+        role: 'user', text: textToSend, timestamp: serverTimestamp()
       });
 
       let replyText = "";
 
       if (currentMode === 'creative') {
-        const encodedPrompt = encodeURIComponent(userText);
+        const encodedPrompt = encodeURIComponent(textToSend);
         const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=800&height=600&nologo=true`;
-        replyText = `🎨 **Image Generated** (via Pollinations AI)\n\n![${userText}](${imageUrl})`;
+        replyText = `🎨 **Image Generated** (via Pollinations AI)\n\n![${textToSend}](${imageUrl})`;
       } else if (!currentKey) {
-        replyText = await queryLocalBrain(userText);
+        replyText = await queryLocalBrain(textToSend);
       } else {
         let sysPrompt = SYSTEM_PROMPT_STANDARD;
         if (currentMode === 'canvas') {
@@ -545,7 +549,7 @@ export default function App() {
 
         const requestMessages = [
           ...formattedHistory,
-          { role: 'user', content: userText }
+          { role: 'user', content: textToSend }
         ];
 
         const data = await fetchWithRetry(
@@ -574,7 +578,7 @@ export default function App() {
       console.error("Messaging Error:", err);
       
       const exactErrorText = `❌ **Exact Error Message:**\n\`\`\`\n${err.message || err}\n\`\`\``;
-      const fallbackText = await queryLocalBrain(userText);
+      const fallbackText = await queryLocalBrain(textToSend);
       const combinedReply = `${exactErrorText}\n\n---\n\n*Falling back to web search & local brain:*\n${fallbackText}`;
 
       if (currentChatId) {
@@ -585,6 +589,43 @@ export default function App() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSend = (e) => {
+    e.preventDefault();
+    handleSendWithText(input.trim());
+  };
+
+  const parseElicitations = (text) => {
+    if (!text || typeof text !== 'string') return { cleanText: text, elicitations: null };
+
+    const groupRegex = /<ElicitationsGroup\s+message="([^"]+)">([\s\S]*?)<\/ElicitationsGroup>/gi;
+    const elicitationRegex = /<Elicitation\s+label="([^"]+)"\s+query="([^"]+)"\s*\/?>/gi;
+
+    let match = groupRegex.exec(text);
+    if (!match) return { cleanText: text, elicitations: null };
+
+    const groupMessage = match[1];
+    const groupContent = match[2];
+    const elicitationsList = [];
+
+    let itemMatch;
+    while ((itemMatch = elicitationRegex.exec(groupContent)) !== null) {
+      elicitationsList.push({
+        label: itemMatch[1],
+        query: itemMatch[2]
+      });
+    }
+
+    const cleanText = text.replace(groupRegex, '').trim();
+
+    return {
+      cleanText,
+      elicitations: {
+        message: groupMessage,
+        items: elicitationsList
+      }
+    };
   };
 
   const saveSettings = async () => {
@@ -722,84 +763,111 @@ export default function App() {
             </div>
           ) : (
             <div className="max-w-3xl w-full mx-auto space-y-6 flex flex-col flex-1">
-              {messages.map((msg, idx) => (
-                <div key={msg.id || idx} className={`flex gap-3 sm:gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                  <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex-shrink-0 flex items-center justify-center text-xs font-bold border border-white/10 shadow-lg ${msg.role === 'user' ? 'bg-slate-800 text-slate-300' : 'text-white'}`} style={msg.role === 'assistant' || msg.role === 'model' ? { backgroundColor: selectedAI ? '#06b6d4' : currentMode === 'creative' ? '#ec4899' : currentMode === 'canvas' ? '#eab308' : theme.color } : {}}>
-                    {msg.role === 'user' ? <User className="w-4 h-4"/> : (selectedAI ? <Bot className="w-4 h-4"/> : currentMode === 'creative' ? <ImageIcon className="w-4 h-4"/> : currentMode === 'canvas' ? <Layout className="w-4 h-4"/> : <Zap className="w-4 h-4" fill="currentColor"/>)}
-                  </div>
-                  <div className={`relative w-full max-w-[88%] sm:max-w-[85%] rounded-2xl p-3.5 sm:p-4 text-sm leading-7 shadow-md border overflow-hidden min-w-0 ${msg.role === 'user' ? 'bg-slate-800 text-white border-white/5' : 'bg-slate-900/50 text-slate-200 border-white/5'}`}>
-                    <ReactMarkdown 
-                      className="prose prose-invert max-w-none break-words" 
-                      remarkPlugins={[remarkGfm, remarkMath]} 
-                      rehypePlugins={[rehypeKatex]}
-                      components={{ 
-                        table({node, ...props}) {
-                          return (
-                            <div className="w-full overflow-x-auto my-3 rounded-xl border border-white/10">
-                              <table className="w-full text-left border-collapse min-w-[500px]" {...props} />
-                            </div>
-                          );
-                        },
-                        th({node, ...props}) {
-                          return <th className="bg-slate-900 p-2.5 text-xs font-bold text-slate-300 border-b border-white/10" {...props} />;
-                        },
-                        td({node, ...props}) {
-                          return <td className="p-2.5 text-xs border-b border-white/5 text-slate-300" {...props} />;
-                        },
-                        code({node, inline, className, children, ...props}) {
-                          const match = /language-(\w+)/.exec(className || '');
-                          const codeString = String(children).replace(/\n$/, '');
+              {messages.map((msg, idx) => {
+                const { cleanText, elicitations } = parseElicitations(msg.text);
 
-                          if (!inline && match && match[1] === 'html') {
+                return (
+                  <div key={msg.id || idx} className={`flex gap-3 sm:gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                    <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex-shrink-0 flex items-center justify-center text-xs font-bold border border-white/10 shadow-lg ${msg.role === 'user' ? 'bg-slate-800 text-slate-300' : 'text-white'}`} style={msg.role === 'assistant' || msg.role === 'model' ? { backgroundColor: selectedAI ? '#06b6d4' : currentMode === 'creative' ? '#ec4899' : currentMode === 'canvas' ? '#eab308' : theme.color } : {}}>
+                      {msg.role === 'user' ? <User className="w-4 h-4"/> : (selectedAI ? <Bot className="w-4 h-4"/> : currentMode === 'creative' ? <ImageIcon className="w-4 h-4"/> : currentMode === 'canvas' ? <Layout className="w-4 h-4"/> : <Zap className="w-4 h-4" fill="currentColor"/>)}
+                    </div>
+                    <div className={`relative w-full max-w-[88%] sm:max-w-[85%] rounded-2xl p-3.5 sm:p-4 text-sm leading-7 shadow-md border overflow-hidden min-w-0 ${msg.role === 'user' ? 'bg-slate-800 text-white border-white/5' : 'bg-slate-900/50 text-slate-200 border-white/5'}`}>
+                      <ReactMarkdown 
+                        className="prose prose-invert max-w-none break-words" 
+                        remarkPlugins={[remarkGfm, remarkMath]} 
+                        rehypePlugins={[rehypeKatex]}
+                        components={{ 
+                          table({node, ...props}) {
                             return (
-                              <div className="my-2 p-3 sm:p-4 bg-slate-950/90 border border-yellow-500/40 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg w-full">
-                                <div className="flex items-center gap-2 text-yellow-400 font-semibold text-xs sm:text-sm">
-                                  <Layout className="w-4 h-4 flex-shrink-0"/> 
-                                  <span>Interactive Canvas Built</span>
-                                </div>
-                                <div className="flex items-center gap-2 w-full sm:w-auto">
-                                  <button 
-                                    onClick={() => copyToClipboard(codeString)} 
-                                    className="flex-1 sm:flex-none justify-center px-3 py-2 bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                                  >
-                                    {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                                    <span>{copiedCode ? "Copied!" : "Copy Code"}</span>
-                                  </button>
-                                  <button 
-                                    onClick={() => {
-                                      setCanvasCode(codeString);
-                                      setIsCanvasPreviewOpen(true);
-                                    }} 
-                                    className="flex-1 sm:flex-none justify-center px-3 py-2 bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 transition-colors shadow-md shadow-yellow-500/20"
-                                  >
-                                    <Play className="w-3.5 h-3.5" fill="currentColor"/> 
-                                    <span>Launch App</span>
-                                  </button>
-                                </div>
+                              <div className="w-full overflow-x-auto my-3 rounded-xl border border-white/10">
+                                <table className="w-full text-left border-collapse min-w-[500px]" {...props} />
                               </div>
                             );
-                          }
+                          },
+                          th({node, ...props}) {
+                            return <th className="bg-slate-900 p-2.5 text-xs font-bold text-slate-300 border-b border-white/10" {...props} />;
+                          },
+                          td({node, ...props}) {
+                            return <td className="p-2.5 text-xs border-b border-white/5 text-slate-300" {...props} />;
+                          },
+                          code({node, inline, className, children, ...props}) {
+                            const match = /language-(\w+)/.exec(className || '');
+                            const codeString = String(children).replace(/\n$/, '');
 
-                          return inline ? (
-                            <code className="bg-white/10 rounded px-1.5 py-0.5 text-xs font-mono break-all" {...props}>
-                              {children}
-                            </code>
-                          ) : (
-                            <div className="w-full overflow-x-auto my-2 rounded-xl border border-white/10">
-                              <pre className="p-3 bg-black/30 min-w-full font-mono text-xs">
-                                <code className={className} {...props}>{children}</code>
-                              </pre>
+                            if (!inline && match && match[1] === 'html') {
+                              return (
+                                <div className="my-2 p-3 sm:p-4 bg-slate-950/90 border border-yellow-500/40 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg w-full">
+                                  <div className="flex items-center gap-2 text-yellow-400 font-semibold text-xs sm:text-sm">
+                                    <Layout className="w-4 h-4 flex-shrink-0"/> 
+                                    <span>Interactive Canvas Built</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                                    <button 
+                                      onClick={() => copyToClipboard(codeString)} 
+                                      className="flex-1 sm:flex-none justify-center px-3 py-2 bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                                    >
+                                      {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                                      <span>{copiedCode ? "Copied!" : "Copy Code"}</span>
+                                    </button>
+                                    <button 
+                                      onClick={() => {
+                                        setCanvasCode(codeString);
+                                        setIsCanvasPreviewOpen(true);
+                                      }} 
+                                      className="flex-1 sm:flex-none justify-center px-3 py-2 bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 transition-colors shadow-md shadow-yellow-500/20"
+                                    >
+                                      <Play className="w-3.5 h-3.5" fill="currentColor"/> 
+                                      <span>Launch App</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            return inline ? (
+                              <code className="bg-white/10 rounded px-1.5 py-0.5 text-xs font-mono break-all" {...props}>
+                                {children}
+                              </code>
+                            ) : (
+                              <div className="w-full overflow-x-auto my-2 rounded-xl border border-white/10">
+                                <pre className="p-3 bg-black/30 min-w-full font-mono text-xs">
+                                  <code className={className} {...props}>{children}</code>
+                                </pre>
+                              </div>
+                            );
+                          },
+                          img: ({node, ...props}) => <img {...props} className="rounded-lg shadow-lg max-w-full h-auto border border-white/10 mt-2 mb-2" alt="Generated" /> 
+                        }}
+                      >
+                        {cleanText}
+                      </ReactMarkdown>
+
+                      {/* Elicitation Suggestions Render Box */}
+                      {elicitations && (
+                        <div className="mt-4 pt-3 border-t border-white/10 space-y-2.5">
+                          {elicitations.message && (
+                            <div className="flex items-center gap-1.5 text-xs font-semibold text-violet-300">
+                              <Sparkles className="w-3.5 h-3.5 text-violet-400" />
+                              <span>{elicitations.message}</span>
                             </div>
-                          );
-                        },
-                        img: ({node, ...props}) => <img {...props} className="rounded-lg shadow-lg max-w-full h-auto border border-white/10 mt-2 mb-2" alt="Generated" /> 
-                      }}
-                    >
-                      {msg.text}
-                    </ReactMarkdown>
+                          )}
+                          <div className="flex flex-wrap gap-2">
+                            {elicitations.items.map((item, eIdx) => (
+                              <button
+                                key={eIdx}
+                                onClick={() => sendQueryDirectly(item.query)}
+                                className="px-3 py-2 bg-violet-600/20 hover:bg-violet-600/40 border border-violet-500/30 text-violet-200 hover:text-white text-xs font-medium rounded-xl transition-all shadow-md active:scale-95 text-left flex items-center gap-1.5"
+                              >
+                                <span>{item.label}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
               {isLoading && (
                 <div className="flex gap-4">
                   <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold shadow-lg animate-pulse" style={{ backgroundColor: getAccentColor() }}>
@@ -942,7 +1010,7 @@ export default function App() {
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">OpenAI API Key</label>
                     <a 
-                      href="https://platform.openai.com/api-keys" 
+                      href="[https://platform.openai.com/api-keys](https://platform.openai.com/api-keys)" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1 transition-colors font-medium"
@@ -969,7 +1037,7 @@ export default function App() {
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Google Gemini API Key</label>
                     <a 
-                      href="https://aistudio.google.com/app/apikey" 
+                      href="[https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors font-medium"
