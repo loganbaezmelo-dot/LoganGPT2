@@ -4,7 +4,7 @@ import {
   Trash2, Monitor, Zap, Cloud, LogOut, Mail, Lock, 
   Key, User, WifiOff, Image as ImageIcon, ExternalLink,
   Paintbrush, Layout, Play, Bot, ToggleLeft, ToggleRight,
-  Copy, Check, Globe, Sparkles
+  Copy, Check, Globe, Sparkles, Mic, MicOff
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -234,9 +234,10 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [activeChatId, setActiveChatId] = useState(null);
   
-  // Input State
+  // Input & Voice State
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [theme, setTheme] = useState({ color: '#8b5cf6', hover: '#7c3aed', name: 'Violet' });
@@ -254,6 +255,7 @@ export default function App() {
 
   const chatContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const recognitionRef = useRef(null);
 
   const activeKey = provider === 'google' ? googleKey : openaiKey;
 
@@ -353,7 +355,6 @@ export default function App() {
       
       const now = Date.now() / 1000;
 
-      // Sort primarily by timestamp, with role tie-breaker (user before assistant)
       msgs.sort((a, b) => {
         const timeA = a.timestamp?.seconds || now;
         const timeB = b.timestamp?.seconds || now;
@@ -392,6 +393,50 @@ export default function App() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, activeChatId, isLoading]);
+
+  // Speech Recognition Toggle
+  const toggleVoiceInput = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      alert("Speech recognition is not supported in this browser. Please try Chrome or Edge.");
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = () => {
+      setIsListening(true);
+    };
+
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .map(result => result[0].transcript)
+        .join('');
+      setInput(transcript);
+    };
+
+    recognition.onerror = (event) => {
+      console.error("Speech recognition error:", event.error);
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  };
 
   // Actions
   const handleLogout = async () => {
@@ -467,7 +512,6 @@ export default function App() {
 
   const sendQueryDirectly = (promptText) => {
     setInput(promptText);
-    const fakeEvent = { preventDefault: () => {} };
     setTimeout(() => {
       handleSendWithText(promptText);
     }, 50);
@@ -567,7 +611,7 @@ export default function App() {
           }
         );
 
-        replyText = data.reply || "No response generated.";
+        replyText = data.reply && data.reply.trim() !== "" ? data.reply : await queryLocalBrain(textToSend);
       }
 
       await addDoc(collection(db, 'users', user.uid, 'chats', currentChatId, 'messages'), {
@@ -890,9 +934,29 @@ export default function App() {
               type="text" 
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={selectedAI ? `Message ${selectedAI.name}...` : currentMode === 'creative' ? "Describe an image to generate..." : currentMode === 'canvas' ? "Describe an app or game to build..." : "Message LoganGPT..."}
-              className="w-full bg-transparent px-5 py-4 text-sm text-white focus:outline-none placeholder-slate-500 pr-12"
+              placeholder={
+                isListening 
+                  ? "Listening... Speak now!" 
+                  : selectedAI ? `Message ${selectedAI.name}...` : currentMode === 'creative' ? "Describe an image to generate..." : currentMode === 'canvas' ? "Describe an app or game to build..." : "Message LoganGPT..."
+              }
+              className="w-full bg-transparent px-5 py-4 text-sm text-white focus:outline-none placeholder-slate-500 pr-24"
             />
+
+            {/* Voice Input Microphone Button */}
+            <button
+              type="button"
+              onClick={toggleVoiceInput}
+              className={`absolute right-12 p-2.5 rounded-xl transition-all ${
+                isListening 
+                  ? 'bg-red-500 text-white animate-pulse' 
+                  : 'text-slate-400 hover:text-white hover:bg-white/10'
+              }`}
+              title={isListening ? "Stop listening" : "Start voice input"}
+            >
+              {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+            </button>
+
+            {/* Send Button */}
             <button 
               type="submit"
               disabled={!input.trim() || isLoading}
@@ -1010,7 +1074,7 @@ export default function App() {
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">OpenAI API Key</label>
                     <a 
-                      href="https://platform.openai.com/api-keys" 
+                      href="[https://platform.openai.com/api-keys](https://platform.openai.com/api-keys)" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1 transition-colors font-medium"
@@ -1037,7 +1101,7 @@ export default function App() {
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Google Gemini API Key</label>
                     <a 
-                      href="https://aistudio.google.com/app/apikey" 
+                      href="[https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors font-medium"
