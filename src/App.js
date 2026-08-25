@@ -4,7 +4,7 @@ import {
   Trash2, Monitor, Zap, Cloud, LogOut, Mail, Lock, 
   Key, User, WifiOff, Image as ImageIcon, ExternalLink,
   Paintbrush, Layout, Play, Bot, ToggleLeft, ToggleRight,
-  Copy, Check, Globe, Sparkles, Mic, MicOff, Paperclip, FileText
+  Copy, Check, Globe, Sparkles, Mic, MicOff, Paperclip, FileText, HardDrive
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -347,42 +347,43 @@ export default function App() {
     }
   }, [activeChatId, chats, customAIs]);
 
-  // Fetch Messages with stable tie-breaker sorting
+  // Fetch Messages with stable tie-breaker sorting + LocalStorage large payload loader
   useEffect(() => {
     if (!user || !activeChatId) {
       setMessages([]);
       setCanvasCode(null);
       return;
     }
+
+    // Check LocalStorage first for large file thread
+    const localLargeStore = JSON.parse(localStorage.getItem(`large_chat_${activeChatId}`) || '[]');
+
     const q = query(collection(db, 'users', user.uid, 'chats', activeChatId, 'messages'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const firestoreMsgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
+      const allMsgs = [...firestoreMsgs, ...localLargeStore];
       const now = Date.now() / 1000;
 
-      msgs.sort((a, b) => {
+      allMsgs.sort((a, b) => {
         const timeA = a.timestamp?.seconds || now;
         const timeB = b.timestamp?.seconds || now;
 
-        if (timeA !== timeB) {
-          return timeA - timeB;
-        }
-
+        if (timeA !== timeB) return timeA - timeB;
         if (a.role === 'user' && b.role !== 'user') return -1;
         if (a.role !== 'user' && b.role === 'user') return 1;
-
         return 0;
       });
 
-      if (msgs.length > 0) {
-        setMessages(msgs);
-        const lastMsg = msgs[msgs.length - 1];
+      if (allMsgs.length > 0) {
+        setMessages(allMsgs);
+        const lastMsg = allMsgs[allMsgs.length - 1];
         if (lastMsg && (lastMsg.role === 'assistant' || lastMsg.role === 'model')) {
           setIsLoading(false);
         }
       }
 
-      const lastCanvasMsg = [...msgs].reverse().find(m => (m.role === 'assistant' || m.role === 'model') && m.text && m.text.includes('```html'));
+      const lastCanvasMsg = [...allMsgs].reverse().find(m => (m.role === 'assistant' || m.role === 'model') && m.text && m.text.includes('```html'));
       if (lastCanvasMsg) {
         const match = lastCanvasMsg.text.match(/```html([\s\S]*?)```/);
         if (match && match[1]) {
@@ -443,7 +444,7 @@ export default function App() {
     recognition.start();
   };
 
-  // Image Upload Handling
+  // Image Upload Handling (Supports up to 15MB)
   const handleImageSelect = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -453,8 +454,8 @@ export default function App() {
       return;
     }
 
-    if (file.size > 4 * 1024 * 1024) {
-      alert('Image size should be less than 4MB.');
+    if (file.size > 15 * 1024 * 1024) {
+      alert('Image size should be less than 15MB.');
       return;
     }
 
@@ -468,13 +469,13 @@ export default function App() {
     e.target.value = '';
   };
 
-  // Document / Code File Upload Handling
+  // Document / Code File Upload Handling (Supports up to 15MB)
   const handleFileSelect = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 2 * 1024 * 1024) {
-      alert('File size should be less than 2MB.');
+    if (file.size > 15 * 1024 * 1024) {
+      alert('File size should be less than 15MB.');
       return;
     }
 
@@ -482,7 +483,8 @@ export default function App() {
     reader.onload = (event) => {
       setAttachedFile({
         name: file.name,
-        content: event.target.result
+        content: event.target.result,
+        size: file.size
       });
       setSelectedImage(null);
     };
@@ -533,6 +535,7 @@ export default function App() {
   const deleteChat = async (e, chatId) => {
     e.stopPropagation();
     if (!user) return;
+    localStorage.removeItem(`large_chat_${chatId}`);
     await deleteDoc(doc(db, 'users', user.uid, 'chats', chatId));
     if (activeChatId === chatId) {
       setActiveChatId(null);
@@ -608,12 +611,15 @@ export default function App() {
       }
     }
 
-    // Combine document content with user text if a text/code file was attached
     let fullUserPrompt = textToSend;
     if (filePayload) {
       const fileHeader = `[ATTACHED FILE: ${filePayload.name}]\n\`\`\`\n${filePayload.content}\n\`\`\`\n\n`;
       fullUserPrompt = `${fileHeader}${textToSend || 'Please analyze or use the attached file.'}`;
     }
+
+    // Check if payload exceeds 750KB to route between Firestore vs LocalStorage
+    const estimatedBytes = (new Blob([fullUserPrompt + (imagePayload || '')])).size;
+    const isLargePayload = estimatedBytes > 750 * 1024;
 
     let currentChatId = activeChatId;
     const currentKey = activeKey.trim();
@@ -634,12 +640,29 @@ export default function App() {
         });
       }
 
-      await addDoc(collection(db, 'users', user.uid, 'chats', currentChatId, 'messages'), {
+      const userMessageObj = {
+        id: `msg-user-${Date.now()}`,
         role: 'user', 
         text: fullUserPrompt, 
         image: imagePayload || null,
-        timestamp: serverTimestamp()
-      });
+        isLocalOnly: isLargePayload,
+        timestamp: { seconds: Date.now() / 1000 }
+      };
+
+      if (isLargePayload) {
+        // Save to LocalStorage to prevent Firestore document limit crash
+        const localKey = `large_chat_${currentChatId}`;
+        const existingLocal = JSON.parse(localStorage.getItem(localKey) || '[]');
+        localStorage.setItem(localKey, JSON.stringify([...existingLocal, userMessageObj]));
+        setMessages((prev) => [...prev, userMessageObj]);
+      } else {
+        await addDoc(collection(db, 'users', user.uid, 'chats', currentChatId, 'messages'), {
+          role: 'user', 
+          text: fullUserPrompt, 
+          image: imagePayload || null,
+          timestamp: serverTimestamp()
+        });
+      }
 
       let replyText = "";
 
@@ -689,9 +712,23 @@ export default function App() {
         replyText = data.reply && data.reply.trim() !== "" ? data.reply : await queryLocalBrain(fullUserPrompt);
       }
 
-      await addDoc(collection(db, 'users', user.uid, 'chats', currentChatId, 'messages'), {
-        role: 'assistant', text: replyText, timestamp: serverTimestamp()
-      });
+      const assistantMessageObj = {
+        id: `msg-asst-${Date.now()}`,
+        role: 'assistant', 
+        text: replyText, 
+        timestamp: { seconds: Date.now() / 1000 }
+      };
+
+      if (isLargePayload) {
+        const localKey = `large_chat_${currentChatId}`;
+        const existingLocal = JSON.parse(localStorage.getItem(localKey) || '[]');
+        localStorage.setItem(localKey, JSON.stringify([...existingLocal, assistantMessageObj]));
+        setMessages((prev) => [...prev, assistantMessageObj]);
+      } else {
+        await addDoc(collection(db, 'users', user.uid, 'chats', currentChatId, 'messages'), {
+          role: 'assistant', text: replyText, timestamp: serverTimestamp()
+        });
+      }
 
     } catch (err) {
       console.error("Messaging Error:", err);
@@ -912,6 +949,14 @@ export default function App() {
                       {msg.image && (
                         <div className="mb-3 rounded-xl overflow-hidden border border-white/10 max-w-sm">
                           <img src={msg.image} alt="User upload" className="w-full h-auto object-cover" />
+                        </div>
+                      )}
+
+                      {/* Large payload banner */}
+                      {msg.isLocalOnly && (
+                        <div className="mb-3 px-2.5 py-1.5 bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] rounded-lg flex items-center gap-1.5">
+                          <HardDrive className="w-3.5 h-3.5" />
+                          <span>Large payload: Saved locally on device to bypass Firestore limit.</span>
                         </div>
                       )}
 
