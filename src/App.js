@@ -4,7 +4,7 @@ import {
   Trash2, Monitor, Zap, Cloud, LogOut, Mail, Lock, 
   Key, User, WifiOff, Image as ImageIcon, ExternalLink,
   Paintbrush, Layout, Play, Bot, ToggleLeft, ToggleRight,
-  Copy, Check, Globe, Sparkles, Mic, MicOff
+  Copy, Check, Globe, Sparkles, Mic, MicOff, Paperclip
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -234,8 +234,9 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [activeChatId, setActiveChatId] = useState(null);
   
-  // Input & Voice State
+  // Input, Voice & Image State
   const [input, setInput] = useState('');
+  const [selectedImage, setSelectedImage] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -256,6 +257,7 @@ export default function App() {
   const chatContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
   const recognitionRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const activeKey = provider === 'google' ? googleKey : openaiKey;
 
@@ -438,6 +440,29 @@ export default function App() {
     recognition.start();
   };
 
+  // Image Upload Handling
+  const handleImageSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Please select a valid image file.');
+      return;
+    }
+
+    // Limit image size to 4MB for fast base64 upload
+    if (file.size > 4 * 1024 * 1024) {
+      alert('Image size should be less than 4MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setSelectedImage(event.target.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
   // Actions
   const handleLogout = async () => {
     await signOut(auth);
@@ -451,6 +476,7 @@ export default function App() {
     setActiveChatId(null);
     setMessages([]);
     setInput('');
+    setSelectedImage(null);
     setCanvasCode(null);
     setIsSidebarOpen(false);
     setSelectedAI(ai);
@@ -495,6 +521,7 @@ export default function App() {
 
   const toggleMode = (mode) => {
     setCurrentMode(currentMode === mode ? 'standard' : mode);
+    if (mode === 'creative') setSelectedImage(null);
     if (mode !== 'standard') setSelectedAI(null); 
   };
 
@@ -513,14 +540,16 @@ export default function App() {
   const sendQueryDirectly = (promptText) => {
     setInput(promptText);
     setTimeout(() => {
-      handleSendWithText(promptText);
+      handleSendWithText(promptText, null);
     }, 50);
   };
 
-  const handleSendWithText = async (textToSend) => {
-    if (!textToSend.trim() || !user || isLoading) return;
+  const handleSendWithText = async (textToSend, imageToSend) => {
+    if ((!textToSend.trim() && !imageToSend) || !user || isLoading) return;
 
     setInput('');
+    const imagePayload = imageToSend || selectedImage;
+    setSelectedImage(null);
     setIsLoading(true);
 
     let effectiveTimeZone = timeZone;
@@ -551,7 +580,7 @@ export default function App() {
     try {
       if (!currentChatId) {
         const chatRef = await addDoc(collection(db, 'users', user.uid, 'chats'), {
-          title: textToSend.slice(0, 30),
+          title: textToSend ? textToSend.slice(0, 30) : "Image Query",
           timestamp: serverTimestamp(),
           aiId: selectedAI?.id || 'logan-default'
         });
@@ -564,7 +593,10 @@ export default function App() {
       }
 
       await addDoc(collection(db, 'users', user.uid, 'chats', currentChatId, 'messages'), {
-        role: 'user', text: textToSend, timestamp: serverTimestamp()
+        role: 'user', 
+        text: textToSend, 
+        image: imagePayload || null,
+        timestamp: serverTimestamp()
       });
 
       let replyText = "";
@@ -584,16 +616,17 @@ export default function App() {
         }
 
         const formattedHistory = (messages || [])
-          .filter(m => m && typeof m.text === 'string' && m.text.trim() !== '')
+          .filter(m => (m && typeof m.text === 'string' && m.text.trim() !== '') || m.image)
           .slice(-10)
           .map(m => ({
             role: m.role === 'assistant' || m.role === 'model' ? 'assistant' : 'user',
-            content: m.text
+            content: m.text || '',
+            image: m.image || null
           }));
 
         const requestMessages = [
           ...formattedHistory,
-          { role: 'user', content: textToSend }
+          { role: 'user', content: textToSend, image: imagePayload || null }
         ];
 
         const data = await fetchWithRetry(
@@ -637,7 +670,7 @@ export default function App() {
 
   const handleSend = (e) => {
     e.preventDefault();
-    handleSendWithText(input.trim());
+    handleSendWithText(input.trim(), selectedImage);
   };
 
   const parseElicitations = (text) => {
@@ -727,6 +760,15 @@ export default function App() {
   return (
     <div className="flex h-[100dvh] bg-[#0B1120] text-slate-100 font-sans overflow-hidden" style={{ '--accent': getAccentColor() }}>
       
+      {/* Hidden File Input for Image Uploads */}
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleImageSelect} 
+        accept="image/*" 
+        className="hidden" 
+      />
+
       {/* Sidebar Overlay */}
       <div className={`fixed inset-0 bg-black/60 z-20 lg:hidden transition-opacity ${isSidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setIsSidebarOpen(false)} />
 
@@ -816,75 +858,85 @@ export default function App() {
                       {msg.role === 'user' ? <User className="w-4 h-4"/> : (selectedAI ? <Bot className="w-4 h-4"/> : currentMode === 'creative' ? <ImageIcon className="w-4 h-4"/> : currentMode === 'canvas' ? <Layout className="w-4 h-4"/> : <Zap className="w-4 h-4" fill="currentColor"/>)}
                     </div>
                     <div className={`relative w-full max-w-[88%] sm:max-w-[85%] rounded-2xl p-3.5 sm:p-4 text-sm leading-7 shadow-md border overflow-hidden min-w-0 ${msg.role === 'user' ? 'bg-slate-800 text-white border-white/5' : 'bg-slate-900/50 text-slate-200 border-white/5'}`}>
-                      <ReactMarkdown 
-                        className="prose prose-invert max-w-none break-words" 
-                        remarkPlugins={[remarkGfm, remarkMath]} 
-                        rehypePlugins={[rehypeKatex]}
-                        components={{ 
-                          table({node, ...props}) {
-                            return (
-                              <div className="w-full overflow-x-auto my-3 rounded-xl border border-white/10">
-                                <table className="w-full text-left border-collapse min-w-[500px]" {...props} />
-                              </div>
-                            );
-                          },
-                          th({node, ...props}) {
-                            return <th className="bg-slate-900 p-2.5 text-xs font-bold text-slate-300 border-b border-white/10" {...props} />;
-                          },
-                          td({node, ...props}) {
-                            return <td className="p-2.5 text-xs border-b border-white/5 text-slate-300" {...props} />;
-                          },
-                          code({node, inline, className, children, ...props}) {
-                            const match = /language-(\w+)/.exec(className || '');
-                            const codeString = String(children).replace(/\n$/, '');
+                      
+                      {/* Attached User Image Display */}
+                      {msg.image && (
+                        <div className="mb-3 rounded-xl overflow-hidden border border-white/10 max-w-sm">
+                          <img src={msg.image} alt="User upload" className="w-full h-auto object-cover" />
+                        </div>
+                      )}
 
-                            if (!inline && match && match[1] === 'html') {
+                      {cleanText && (
+                        <ReactMarkdown 
+                          className="prose prose-invert max-w-none break-words" 
+                          remarkPlugins={[remarkGfm, remarkMath]} 
+                          rehypePlugins={[rehypeKatex]}
+                          components={{ 
+                            table({node, ...props}) {
                               return (
-                                <div className="my-2 p-3 sm:p-4 bg-slate-950/90 border border-yellow-500/40 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg w-full">
-                                  <div className="flex items-center gap-2 text-yellow-400 font-semibold text-xs sm:text-sm">
-                                    <Layout className="w-4 h-4 flex-shrink-0"/> 
-                                    <span>Interactive Canvas Built</span>
-                                  </div>
-                                  <div className="flex items-center gap-2 w-full sm:w-auto">
-                                    <button 
-                                      onClick={() => copyToClipboard(codeString)} 
-                                      className="flex-1 sm:flex-none justify-center px-3 py-2 bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                                    >
-                                      {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                                      <span>{copiedCode ? "Copied!" : "Copy Code"}</span>
-                                    </button>
-                                    <button 
-                                      onClick={() => {
-                                        setCanvasCode(codeString);
-                                        setIsCanvasPreviewOpen(true);
-                                      }} 
-                                      className="flex-1 sm:flex-none justify-center px-3 py-2 bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 transition-colors shadow-md shadow-yellow-500/20"
-                                    >
-                                      <Play className="w-3.5 h-3.5" fill="currentColor"/> 
-                                      <span>Launch App</span>
-                                    </button>
-                                  </div>
+                                <div className="w-full overflow-x-auto my-3 rounded-xl border border-white/10">
+                                  <table className="w-full text-left border-collapse min-w-[500px]" {...props} />
                                 </div>
                               );
-                            }
+                            },
+                            th({node, ...props}) {
+                              return <th className="bg-slate-900 p-2.5 text-xs font-bold text-slate-300 border-b border-white/10" {...props} />;
+                            },
+                            td({node, ...props}) {
+                              return <td className="p-2.5 text-xs border-b border-white/5 text-slate-300" {...props} />;
+                            },
+                            code({node, inline, className, children, ...props}) {
+                              const match = /language-(\w+)/.exec(className || '');
+                              const codeString = String(children).replace(/\n$/, '');
 
-                            return inline ? (
-                              <code className="bg-white/10 rounded px-1.5 py-0.5 text-xs font-mono break-all" {...props}>
-                                {children}
-                              </code>
-                            ) : (
-                              <div className="w-full overflow-x-auto my-2 rounded-xl border border-white/10">
-                                <pre className="p-3 bg-black/30 min-w-full font-mono text-xs">
-                                  <code className={className} {...props}>{children}</code>
-                                </pre>
-                              </div>
-                            );
-                          },
-                          img: ({node, ...props}) => <img {...props} className="rounded-lg shadow-lg max-w-full h-auto border border-white/10 mt-2 mb-2" alt="Generated" /> 
-                        }}
-                      >
-                        {cleanText}
-                      </ReactMarkdown>
+                              if (!inline && match && match[1] === 'html') {
+                                return (
+                                  <div className="my-2 p-3 sm:p-4 bg-slate-950/90 border border-yellow-500/40 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg w-full">
+                                    <div className="flex items-center gap-2 text-yellow-400 font-semibold text-xs sm:text-sm">
+                                      <Layout className="w-4 h-4 flex-shrink-0"/> 
+                                      <span>Interactive Canvas Built</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                                      <button 
+                                        onClick={() => copyToClipboard(codeString)} 
+                                        className="flex-1 sm:flex-none justify-center px-3 py-2 bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                                      >
+                                        {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                                        <span>{copiedCode ? "Copied!" : "Copy Code"}</span>
+                                      </button>
+                                      <button 
+                                        onClick={() => {
+                                          setCanvasCode(codeString);
+                                          setIsCanvasPreviewOpen(true);
+                                        }} 
+                                        className="flex-1 sm:flex-none justify-center px-3 py-2 bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 transition-colors shadow-md shadow-yellow-500/20"
+                                      >
+                                        <Play className="w-3.5 h-3.5" fill="currentColor"/> 
+                                        <span>Launch App</span>
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              }
+
+                              return inline ? (
+                                <code className="bg-white/10 rounded px-1.5 py-0.5 text-xs font-mono break-all" {...props}>
+                                  {children}
+                                </code>
+                              ) : (
+                                <div className="w-full overflow-x-auto my-2 rounded-xl border border-white/10">
+                                  <pre className="p-3 bg-black/30 min-w-full font-mono text-xs">
+                                    <code className={className} {...props}>{children}</code>
+                                  </pre>
+                                </div>
+                              );
+                            },
+                            img: ({node, ...props}) => <img {...props} className="rounded-lg shadow-lg max-w-full h-auto border border-white/10 mt-2 mb-2" alt="Generated" /> 
+                          }}
+                        >
+                          {cleanText}
+                        </ReactMarkdown>
+                      )}
 
                       {/* Elicitation Suggestions Render Box */}
                       {elicitations && (
@@ -929,43 +981,74 @@ export default function App() {
 
         {/* Input Bar */}
         <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-[#0B1120] via-[#0B1120]/90 to-transparent p-4">
-          <form onSubmit={handleSend} className="max-w-3xl mx-auto relative flex items-center bg-slate-900/80 border border-white/10 rounded-2xl shadow-2xl backdrop-blur-xl focus-within:border-white/20 transition-all">
-            <input 
-              type="text" 
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder={
-                isListening 
-                  ? "Listening... Speak now!" 
-                  : selectedAI ? `Message ${selectedAI.name}...` : currentMode === 'creative' ? "Describe an image to generate..." : currentMode === 'canvas' ? "Describe an app or game to build..." : "Message LoganGPT..."
-              }
-              className="w-full bg-transparent px-5 py-4 text-sm text-white focus:outline-none placeholder-slate-500 pr-24"
-            />
+          <div className="max-w-3xl mx-auto flex flex-col gap-2">
+            
+            {/* Image Preview Tag */}
+            {selectedImage && (
+              <div className="relative self-start bg-slate-900 border border-white/10 rounded-xl p-1.5 shadow-xl flex items-center gap-2">
+                <img src={selectedImage} alt="Upload preview" className="w-12 h-12 rounded-lg object-cover" />
+                <span className="text-xs text-slate-300 pr-2">Image attached</span>
+                <button 
+                  type="button" 
+                  onClick={() => setSelectedImage(null)}
+                  className="p-1 text-slate-400 hover:text-red-400 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
 
-            {/* Voice Input Microphone Button */}
-            <button
-              type="button"
-              onClick={toggleVoiceInput}
-              className={`absolute right-12 p-2.5 rounded-xl transition-all ${
-                isListening 
-                  ? 'bg-red-500 text-white animate-pulse' 
-                  : 'text-slate-400 hover:text-white hover:bg-white/10'
-              }`}
-              title={isListening ? "Stop listening" : "Start voice input"}
-            >
-              {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-            </button>
+            <form onSubmit={handleSend} className="relative flex items-center bg-slate-900/80 border border-white/10 rounded-2xl shadow-2xl backdrop-blur-xl focus-within:border-white/20 transition-all">
+              
+              {/* Paperclip Button for Images (Hidden in Creative Mode) */}
+              {currentMode !== 'creative' && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-3 ml-1 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors"
+                  title="Upload Image"
+                >
+                  <Paperclip className="w-4 h-4" />
+                </button>
+              )}
 
-            {/* Send Button */}
-            <button 
-              type="submit"
-              disabled={!input.trim() || isLoading}
-              className="absolute right-2 p-2.5 rounded-xl text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-md"
-              style={{ backgroundColor: getAccentColor() }}
-            >
-              <Send className="w-4 h-4"/>
-            </button>
-          </form>
+              <input 
+                type="text" 
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder={
+                  isListening 
+                    ? "Listening... Speak now!" 
+                    : selectedAI ? `Message ${selectedAI.name}...` : currentMode === 'creative' ? "Describe an image to generate..." : currentMode === 'canvas' ? "Describe an app or game to build..." : "Message LoganGPT..."
+                }
+                className={`w-full bg-transparent px-3 py-4 text-sm text-white focus:outline-none placeholder-slate-500 pr-24 ${currentMode === 'creative' ? 'pl-5' : ''}`}
+              />
+
+              {/* Voice Input Microphone Button */}
+              <button
+                type="button"
+                onClick={toggleVoiceInput}
+                className={`absolute right-12 p-2.5 rounded-xl transition-all ${
+                  isListening 
+                    ? 'bg-red-500 text-white animate-pulse' 
+                    : 'text-slate-400 hover:text-white hover:bg-white/10'
+                }`}
+                title={isListening ? "Stop listening" : "Start voice input"}
+              >
+                {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              </button>
+
+              {/* Send Button */}
+              <button 
+                type="submit"
+                disabled={(!input.trim() && !selectedImage) || isLoading}
+                className="absolute right-2 p-2.5 rounded-xl text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-md"
+                style={{ backgroundColor: getAccentColor() }}
+              >
+                <Send className="w-4 h-4"/>
+              </button>
+            </form>
+          </div>
         </div>
       </div>
 
@@ -1074,7 +1157,7 @@ export default function App() {
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">OpenAI API Key</label>
                     <a 
-                      href="https://platform.openai.com/api-keys" 
+                      href="[https://platform.openai.com/api-keys](https://platform.openai.com/api-keys)" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1 transition-colors font-medium"
@@ -1101,7 +1184,7 @@ export default function App() {
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Google Gemini API Key</label>
                     <a 
-                      href="https://aistudio.google.com/app/apikey" 
+                      href="[https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors font-medium"
