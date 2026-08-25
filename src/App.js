@@ -4,7 +4,7 @@ import {
   Trash2, Monitor, Zap, Cloud, LogOut, Mail, Lock, 
   Key, User, WifiOff, Image as ImageIcon, ExternalLink,
   Paintbrush, Layout, Play, Bot, ToggleLeft, ToggleRight,
-  Copy, Check, Globe, Sparkles, Mic, MicOff, Paperclip
+  Copy, Check, Globe, Sparkles, Mic, MicOff, Paperclip, FileText
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -234,9 +234,11 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [activeChatId, setActiveChatId] = useState(null);
   
-  // Input, Voice & Image State
+  // Input, Voice, Image & Attachment State
   const [input, setInput] = useState('');
   const [selectedImage, setSelectedImage] = useState(null);
+  const [attachedFile, setAttachedFile] = useState(null);
+  const [isAttachMenuOpen, setIsAttachMenuOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -257,6 +259,7 @@ export default function App() {
   const chatContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
   const recognitionRef = useRef(null);
+  const imageInputRef = useRef(null);
   const fileInputRef = useRef(null);
 
   const activeKey = provider === 'google' ? googleKey : openaiKey;
@@ -450,7 +453,6 @@ export default function App() {
       return;
     }
 
-    // Limit image size to 4MB for fast base64 upload
     if (file.size > 4 * 1024 * 1024) {
       alert('Image size should be less than 4MB.');
       return;
@@ -459,8 +461,34 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = (event) => {
       setSelectedImage(event.target.result);
+      setAttachedFile(null);
     };
     reader.readAsDataURL(file);
+    setIsAttachMenuOpen(false);
+    e.target.value = '';
+  };
+
+  // Document / Code File Upload Handling
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      alert('File size should be less than 2MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setAttachedFile({
+        name: file.name,
+        content: event.target.result
+      });
+      setSelectedImage(null);
+    };
+    reader.readAsText(file);
+    setIsAttachMenuOpen(false);
+    e.target.value = '';
   };
 
   // Actions
@@ -477,6 +505,7 @@ export default function App() {
     setMessages([]);
     setInput('');
     setSelectedImage(null);
+    setAttachedFile(null);
     setCanvasCode(null);
     setIsSidebarOpen(false);
     setSelectedAI(ai);
@@ -521,7 +550,10 @@ export default function App() {
 
   const toggleMode = (mode) => {
     setCurrentMode(currentMode === mode ? 'standard' : mode);
-    if (mode === 'creative') setSelectedImage(null);
+    if (mode === 'creative') {
+      setSelectedImage(null);
+      setAttachedFile(null);
+    }
     if (mode !== 'standard') setSelectedAI(null); 
   };
 
@@ -540,16 +572,18 @@ export default function App() {
   const sendQueryDirectly = (promptText) => {
     setInput(promptText);
     setTimeout(() => {
-      handleSendWithText(promptText, null);
+      handleSendWithText(promptText, null, null);
     }, 50);
   };
 
-  const handleSendWithText = async (textToSend, imageToSend) => {
-    if ((!textToSend.trim() && !imageToSend) || !user || isLoading) return;
+  const handleSendWithText = async (textToSend, imageToSend, fileToSend) => {
+    if ((!textToSend.trim() && !imageToSend && !fileToSend) || !user || isLoading) return;
 
     setInput('');
     const imagePayload = imageToSend || selectedImage;
+    const filePayload = fileToSend || attachedFile;
     setSelectedImage(null);
+    setAttachedFile(null);
     setIsLoading(true);
 
     let effectiveTimeZone = timeZone;
@@ -574,13 +608,21 @@ export default function App() {
       }
     }
 
+    // Combine document content with user text if a text/code file was attached
+    let fullUserPrompt = textToSend;
+    if (filePayload) {
+      const fileHeader = `[ATTACHED FILE: ${filePayload.name}]\n\`\`\`\n${filePayload.content}\n\`\`\`\n\n`;
+      fullUserPrompt = `${fileHeader}${textToSend || 'Please analyze or use the attached file.'}`;
+    }
+
     let currentChatId = activeChatId;
     const currentKey = activeKey.trim();
 
     try {
       if (!currentChatId) {
+        const chatTitle = textToSend ? textToSend.slice(0, 30) : (filePayload ? `File: ${filePayload.name}` : "Image Query");
         const chatRef = await addDoc(collection(db, 'users', user.uid, 'chats'), {
-          title: textToSend ? textToSend.slice(0, 30) : "Image Query",
+          title: chatTitle,
           timestamp: serverTimestamp(),
           aiId: selectedAI?.id || 'logan-default'
         });
@@ -594,7 +636,7 @@ export default function App() {
 
       await addDoc(collection(db, 'users', user.uid, 'chats', currentChatId, 'messages'), {
         role: 'user', 
-        text: textToSend, 
+        text: fullUserPrompt, 
         image: imagePayload || null,
         timestamp: serverTimestamp()
       });
@@ -606,7 +648,7 @@ export default function App() {
         const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=800&height=600&nologo=true`;
         replyText = `🎨 **Image Generated** (via Pollinations AI)\n\n![${textToSend}](${imageUrl})`;
       } else if (!currentKey) {
-        replyText = await queryLocalBrain(textToSend);
+        replyText = await queryLocalBrain(fullUserPrompt);
       } else {
         let sysPrompt = SYSTEM_PROMPT_STANDARD;
         if (currentMode === 'canvas') {
@@ -626,7 +668,7 @@ export default function App() {
 
         const requestMessages = [
           ...formattedHistory,
-          { role: 'user', content: textToSend, image: imagePayload || null }
+          { role: 'user', content: fullUserPrompt, image: imagePayload || null }
         ];
 
         const data = await fetchWithRetry(
@@ -644,7 +686,7 @@ export default function App() {
           }
         );
 
-        replyText = data.reply && data.reply.trim() !== "" ? data.reply : await queryLocalBrain(textToSend);
+        replyText = data.reply && data.reply.trim() !== "" ? data.reply : await queryLocalBrain(fullUserPrompt);
       }
 
       await addDoc(collection(db, 'users', user.uid, 'chats', currentChatId, 'messages'), {
@@ -655,7 +697,7 @@ export default function App() {
       console.error("Messaging Error:", err);
       
       const exactErrorText = `❌ **Exact Error Message:**\n\`\`\`\n${err.message || err}\n\`\`\``;
-      const fallbackText = await queryLocalBrain(textToSend);
+      const fallbackText = await queryLocalBrain(fullUserPrompt);
       const combinedReply = `${exactErrorText}\n\n---\n\n*Falling back to web search & local brain:*\n${fallbackText}`;
 
       if (currentChatId) {
@@ -670,7 +712,7 @@ export default function App() {
 
   const handleSend = (e) => {
     e.preventDefault();
-    handleSendWithText(input.trim(), selectedImage);
+    handleSendWithText(input.trim(), selectedImage, attachedFile);
   };
 
   const parseElicitations = (text) => {
@@ -760,12 +802,19 @@ export default function App() {
   return (
     <div className="flex h-[100dvh] bg-[#0B1120] text-slate-100 font-sans overflow-hidden" style={{ '--accent': getAccentColor() }}>
       
-      {/* Hidden File Input for Image Uploads */}
+      {/* Hidden File Inputs */}
+      <input 
+        type="file" 
+        ref={imageInputRef} 
+        onChange={handleImageSelect} 
+        accept="image/*" 
+        className="hidden" 
+      />
       <input 
         type="file" 
         ref={fileInputRef} 
-        onChange={handleImageSelect} 
-        accept="image/*" 
+        onChange={handleFileSelect} 
+        accept=".txt,.js,.jsx,.ts,.tsx,.json,.html,.css,.md,.csv,.py,.c,.cpp" 
         className="hidden" 
       />
 
@@ -983,10 +1032,10 @@ export default function App() {
         <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-[#0B1120] via-[#0B1120]/90 to-transparent p-4">
           <div className="max-w-3xl mx-auto flex flex-col gap-2">
             
-            {/* Image Preview Tag */}
+            {/* Attachment Preview Tags */}
             {selectedImage && (
               <div className="relative self-start bg-slate-900 border border-white/10 rounded-xl p-1.5 shadow-xl flex items-center gap-2">
-                <img src={selectedImage} alt="Upload preview" className="w-12 h-12 rounded-lg object-cover" />
+                <img src={selectedImage} alt="Upload preview" className="w-10 h-10 rounded-lg object-cover" />
                 <span className="text-xs text-slate-300 pr-2">Image attached</span>
                 <button 
                   type="button" 
@@ -998,18 +1047,56 @@ export default function App() {
               </div>
             )}
 
+            {attachedFile && (
+              <div className="relative self-start bg-slate-900 border border-white/10 rounded-xl p-2 shadow-xl flex items-center gap-2">
+                <FileText className="w-5 h-5 text-violet-400" />
+                <span className="text-xs text-slate-200 font-medium truncate max-w-xs">{attachedFile.name}</span>
+                <button 
+                  type="button" 
+                  onClick={() => setAttachedFile(null)}
+                  className="p-1 text-slate-400 hover:text-red-400 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
             <form onSubmit={handleSend} className="relative flex items-center bg-slate-900/80 border border-white/10 rounded-2xl shadow-2xl backdrop-blur-xl focus-within:border-white/20 transition-all">
               
-              {/* Paperclip Button for Images (Hidden in Creative Mode) */}
+              {/* Attachment Picker Menu (Hidden in Creative Mode) */}
               {currentMode !== 'creative' && (
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="p-3 ml-1 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors"
-                  title="Upload Image"
-                >
-                  <Paperclip className="w-4 h-4" />
-                </button>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsAttachMenuOpen(!isAttachMenuOpen)}
+                    className="p-3 ml-1 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors"
+                    title="Attach File or Image"
+                  >
+                    <Paperclip className="w-4 h-4" />
+                  </button>
+
+                  {/* Dropdown Options */}
+                  {isAttachMenuOpen && (
+                    <div className="absolute bottom-14 left-2 bg-slate-900 border border-white/10 rounded-2xl p-1.5 shadow-2xl flex flex-col gap-1 z-30 min-w-[160px] backdrop-blur-xl">
+                      <button
+                        type="button"
+                        onClick={() => imageInputRef.current?.click()}
+                        className="flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-300 hover:text-white hover:bg-white/10 rounded-xl transition-colors text-left"
+                      >
+                        <ImageIcon className="w-4 h-4 text-pink-400" />
+                        <span>Send Image</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-300 hover:text-white hover:bg-white/10 rounded-xl transition-colors text-left"
+                      >
+                        <FileText className="w-4 h-4 text-emerald-400" />
+                        <span>Upload File / Code</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
 
               <input 
@@ -1041,7 +1128,7 @@ export default function App() {
               {/* Send Button */}
               <button 
                 type="submit"
-                disabled={(!input.trim() && !selectedImage) || isLoading}
+                disabled={(!input.trim() && !selectedImage && !attachedFile) || isLoading}
                 className="absolute right-2 p-2.5 rounded-xl text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-md"
                 style={{ backgroundColor: getAccentColor() }}
               >
