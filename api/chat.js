@@ -5,7 +5,7 @@ export const config = {
 // Helper function to extract search keywords and query the Wikipedia REST API safely
 async function fetchWikipediaContext(userText) {
   try {
-    if (!userText || userText.trim().length < 3) return null;
+    if (!userText || typeof userText !== 'string' || userText.trim().length < 3) return null;
 
     // Skip search entirely for app generation, game building, or code requests
     const lower = userText.toLowerCase();
@@ -13,7 +13,8 @@ async function fetchWikipediaContext(userText) {
       lower.includes('make an app') || 
       lower.includes('build a game') || 
       lower.includes('create a canvas') || 
-      lower.includes('generate code')
+      lower.includes('generate code') ||
+      lower.includes('lines of code')
     ) {
       return null;
     }
@@ -25,7 +26,8 @@ async function fetchWikipediaContext(userText) {
       'was', 'released', 'make', 'an', 'app', 'out', 'display', 'screen'
     ]);
 
-    const words = userText.replace(/[^\w\s]/gi, '').split(/\s+/);
+    const sanitizedText = userText.replace(/[^\w\s]/gi, '');
+    const words = sanitizedText ? sanitizedText.split(/\s+/) : [];
     const keywords = words.filter(w => w.length > 1 && !stopWords.has(w.toLowerCase())).join(' ');
 
     if (!keywords || keywords.trim().length === 0) return null;
@@ -83,28 +85,26 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { provider, apiKey, messages = [], systemPrompt, userTimeZone } = req.body || {};
+    const { provider = 'google', apiKey, messages = [], systemPrompt, userTimeZone } = req.body || {};
 
-    if (!apiKey) {
+    if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
       return res.status(400).json({ error: 'API key is required.' });
     }
 
+    const cleanKey = apiKey.trim();
+
     const GEMINI_LADDER = [
-      'gemini-3.6-flash',
-      'gemini-3.5-flash',
-      'gemini-3.5-flash-lite',
-      'gemini-3.1-flash-lite',
       'gemini-2.5-flash',
       'gemini-2.5-flash-lite',
-      'gemma-4-31b-it',
-      'gemma-4-26b-a4b-it'
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+      'gemini-1.5-pro'
     ];
 
     const OPENAI_LADDER = [
-      'gpt-5.6-luna',
-      'gpt-5.5-instant',
       'gpt-4o-mini',
-      'gpt-4o'
+      'gpt-4o',
+      'gpt-3.5-turbo'
     ];
 
     const modelLadder = provider === 'google' ? GEMINI_LADDER : OPENAI_LADDER;
@@ -129,43 +129,60 @@ export default async function handler(req, res) {
     }
 
     // Limit active chat history to recent 10 messages
-    const recentMessages = messages.length > 10 ? messages.slice(-10) : messages;
+    const recentMessages = Array.isArray(messages) && messages.length > 10 
+      ? messages.slice(-10) 
+      : (Array.isArray(messages) ? messages : []);
 
     const lastUserMessageObj = recentMessages.slice().reverse().find(m => m.role === 'user');
-    const lastUserText = lastUserMessageObj?.content || '';
+    const lastUserText = typeof lastUserMessageObj?.content === 'string' ? lastUserMessageObj.content : '';
 
-    const isPersonaActive = systemPrompt && systemPrompt.trim().length > 0 && !systemPrompt.includes("enterprise AI workspace");
+    const isPersonaActive = systemPrompt && typeof systemPrompt === 'string' && systemPrompt.trim().length > 0 && !systemPrompt.includes("enterprise AI workspace");
 
     let wikiContext = null;
-    if (!isPersonaActive) {
+    if (!isPersonaActive && lastUserText) {
       wikiContext = await fetchWikipediaContext(lastUserText);
     }
 
     const timeContext = `[CURRENT REAL-WORLD DATE AND TIME]: ${formattedTimeStr} (${targetTimeZone}).`;
     
-    const personaInstruction = systemPrompt && systemPrompt.trim() 
+    const personaInstruction = systemPrompt && typeof systemPrompt === 'string' && systemPrompt.trim() 
       ? systemPrompt.trim() 
       : "You are LoganGPT, an enterprise AI workspace.";
 
     const imageFormattingRules = `\n\nIMAGE GENERATION INSTRUCTIONS:\nWhen the user asks to generate, create, or draw an image, return ONLY a Markdown image tag using Pollinations AI with the high-quality Flux model params like this:\n![Generated Image](https://image.pollinations.ai/prompt/<URL_ENCODED_PROMPT_HERE>?model=flux&nologo=true)`;
 
-    const accuracyRules = `\n\nHARDWARE SPECIFICATION GUARDS:\n- Verify hardware differences carefully. For example, the base Nintendo Switch 2 features an 8-inch LCD screen, whereas the Nintendo Switch OLED model is a previous-generation variant. Do not mix specs between hardware revisions or generations.`;
-
     const elicitationRules = `\n\nSUGGESTION BUTTONS / ELICITATIONS:\nWhen offering logical next steps, options, or follow-up prompts to the user, you may optionally include an ElicitationsGroup block using this exact format:\n<ElicitationsGroup message="Where should we take this next?">\n  <Elicitation label="Option Label Here" query="Exact text to send when clicked" />\n  <Elicitation label="Another Option" query="Another exact prompt to send" />\n</ElicitationsGroup>`;
 
-    const combinedSystemPrompt = `${personaInstruction}\n\nSTRICT BEHAVIOR RULES:\n1. Adopt the identity, tone, and character specified above.\n2. Output ONLY the direct in-character response to the user. Never print internal planning logs, analysis steps, or self-dialogue.${imageFormattingRules}${accuracyRules}${elicitationRules}\n\n${timeContext}${wikiContext ? `\n\n${wikiContext}` : ''}`;
+    const combinedSystemPrompt = `${personaInstruction}\n\nSTRICT BEHAVIOR RULES:\n1. Adopt the identity, tone, and character specified above.\n2. Output ONLY the direct in-character response to the user. Never print internal planning logs, analysis steps, or self-dialogue.${imageFormattingRules}${elicitationRules}\n\n${timeContext}${wikiContext ? `\n\n${wikiContext}` : ''}`;
 
-    let rawContents = recentMessages.map(m => ({
-      role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
-      parts: [{ text: m.content || '' }]
-    })).filter(c => c.parts[0].text.trim() !== '');
+    let rawContents = recentMessages.map(m => {
+      const parts = [];
+      if (m.content) parts.push({ text: String(m.content) });
+      
+      // Vision payload handling for base64 inline images
+      if (m.image && typeof m.image === 'string' && m.image.includes(';base64,')) {
+        const [meta, base64Data] = m.image.split(';base64,');
+        const mimeType = meta.replace('data:', '') || 'image/png';
+        parts.push({
+          inlineData: {
+            mimeType,
+            data: base64Data
+          }
+        });
+      }
+
+      return {
+        role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
+        parts: parts.length > 0 ? parts : [{ text: ' ' }]
+      };
+    }).filter(c => c.parts.length > 0);
 
     const sanitizedContents = [];
     for (const msg of rawContents) {
       if (sanitizedContents.length > 0 && sanitizedContents[sanitizedContents.length - 1].role === msg.role) {
-        sanitizedContents[sanitizedContents.length - 1].parts[0].text += `\n${msg.parts[0].text}`;
+        sanitizedContents[sanitizedContents.length - 1].parts.push(...msg.parts);
       } else {
-        sanitizedContents.push({ role: msg.role, parts: [{ text: msg.parts[0].text }] });
+        sanitizedContents.push(msg);
       }
     }
 
@@ -185,10 +202,7 @@ export default async function handler(req, res) {
         const timeoutId = setTimeout(() => controller.abort(), 55000);
 
         if (provider === 'google') {
-          const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`;
-          
-          const isStandardGemini = currentModel.startsWith('gemini');
-          const isGemini25 = currentModel.includes('2.5');
+          const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${cleanKey}`;
 
           const generationConfig = {
             temperature: 0.7,
@@ -196,17 +210,12 @@ export default async function handler(req, res) {
             maxOutputTokens: 2048
           };
 
-          if (isGemini25) {
-            generationConfig.thinkingConfig = { thinkingBudget: 0 };
-          }
-
           const payload = {
             systemInstruction: {
               parts: [{ text: combinedSystemPrompt }]
             },
             contents: sanitizedContents,
-            generationConfig: generationConfig,
-            ...(isStandardGemini ? { tools: [{ googleSearch: {} }] } : {})
+            generationConfig: generationConfig
           };
 
           const response = await fetch(endpoint, {
@@ -228,10 +237,9 @@ export default async function handler(req, res) {
           const finishReason = candidate?.finishReason;
 
           const parts = candidate?.content?.parts || [];
-          const textParts = parts.filter(p => !p.thought).map(p => p.text);
-          replyText = textParts.join('').trim() || parts.map(p => p.text).join('').trim();
+          const textParts = parts.filter(p => !p.thought).map(p => p.text || '');
+          replyText = textParts.join('').trim() || parts.map(p => p.text || '').join('').trim();
 
-          // Force error if empty to guarantee falling through to next model in ladder
           if (!replyText) {
             throw new Error(`Model returned empty text (Finish reason: ${finishReason || 'UNKNOWN'})`);
           }
@@ -244,14 +252,17 @@ export default async function handler(req, res) {
           
           const formattedMessages = [
             { role: 'system', content: combinedSystemPrompt },
-            ...recentMessages
+            ...recentMessages.map(m => ({
+              role: m.role === 'assistant' || m.role === 'model' ? 'assistant' : 'user',
+              content: m.content || ''
+            }))
           ];
 
           const response = await fetch(endpoint, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${apiKey}`
+              'Authorization': `Bearer ${cleanKey}`
             },
             body: JSON.stringify({
               model: currentModel,
