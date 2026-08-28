@@ -93,7 +93,7 @@ export default async function handler(req, res) {
 
     const cleanKey = apiKey.trim();
 
-    // Latest Gemini & Gemma Model Ladder
+    // Production Gemini & Gemma Model Fallback Ladder
     const GEMINI_LADDER = [
       'gemini-3.7-flash',
       'gemini-3.6-flash',
@@ -105,8 +105,11 @@ export default async function handler(req, res) {
       'gemma-4-26b-a4b-it'
     ];
 
-    // Latest OpenAI Model Ladder
+    // Production OpenAI Model Fallback Ladder (GPT-5.6 series first)
     const OPENAI_LADDER = [
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gpt-5.6-luna',
       'gpt-5.5',
       'gpt-5.4',
       'gpt-5.4-mini',
