@@ -93,18 +93,26 @@ export default async function handler(req, res) {
 
     const cleanKey = apiKey.trim();
 
+    // Latest Gemini & Gemma Model Ladder
     const GEMINI_LADDER = [
-      'gemini-2.5-flash',
-      'gemini-2.5-flash-lite',
-      'gemini-2.0-flash',
-      'gemini-1.5-flash',
-      'gemini-1.5-pro'
+      'gemini-3.7-flash',
+      'gemini-3.6-flash',
+      'gemini-3.5-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-3.1-pro',
+      'gemini-3.1-flash-lite',
+      'gemma-4-31b-it',
+      'gemma-4-26b-a4b-it'
     ];
 
+    // Latest OpenAI Model Ladder
     const OPENAI_LADDER = [
-      'gpt-4o-mini',
-      'gpt-4o',
-      'gpt-3.5-turbo'
+      'gpt-5.5',
+      'gpt-5.4',
+      'gpt-5.4-mini',
+      'gpt-4.1',
+      'gpt-4.1-mini',
+      'o4-mini'
     ];
 
     const modelLadder = provider === 'google' ? GEMINI_LADDER : OPENAI_LADDER;
@@ -151,9 +159,11 @@ export default async function handler(req, res) {
 
     const imageFormattingRules = `\n\nIMAGE GENERATION INSTRUCTIONS:\nWhen the user asks to generate, create, or draw an image, return ONLY a Markdown image tag using Pollinations AI with the high-quality Flux model params like this:\n![Generated Image](https://image.pollinations.ai/prompt/<URL_ENCODED_PROMPT_HERE>?model=flux&nologo=true)`;
 
+    const accuracyRules = `\n\nHARDWARE SPECIFICATION GUARDS:\n- Verify hardware differences carefully. For example, the base Nintendo Switch 2 features an 8-inch LCD screen, whereas the Nintendo Switch OLED model is a previous-generation variant. Do not mix specs between hardware revisions or generations.`;
+
     const elicitationRules = `\n\nSUGGESTION BUTTONS / ELICITATIONS:\nWhen offering logical next steps, options, or follow-up prompts to the user, you may optionally include an ElicitationsGroup block using this exact format:\n<ElicitationsGroup message="Where should we take this next?">\n  <Elicitation label="Option Label Here" query="Exact text to send when clicked" />\n  <Elicitation label="Another Option" query="Another exact prompt to send" />\n</ElicitationsGroup>`;
 
-    const combinedSystemPrompt = `${personaInstruction}\n\nSTRICT BEHAVIOR RULES:\n1. Adopt the identity, tone, and character specified above.\n2. Output ONLY the direct in-character response to the user. Never print internal planning logs, analysis steps, or self-dialogue.${imageFormattingRules}${elicitationRules}\n\n${timeContext}${wikiContext ? `\n\n${wikiContext}` : ''}`;
+    const combinedSystemPrompt = `${personaInstruction}\n\nSTRICT BEHAVIOR RULES:\n1. Adopt the identity, tone, and character specified above.\n2. Output ONLY the direct in-character response to the user. Never print internal planning logs, analysis steps, or self-dialogue.${imageFormattingRules}${accuracyRules}${elicitationRules}\n\n${timeContext}${wikiContext ? `\n\n${wikiContext}` : ''}`;
 
     let rawContents = recentMessages.map(m => {
       const parts = [];
@@ -204,6 +214,8 @@ export default async function handler(req, res) {
         if (provider === 'google') {
           const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${cleanKey}`;
 
+          const isStandardGemini = currentModel.startsWith('gemini');
+
           const generationConfig = {
             temperature: 0.7,
             topP: 0.95,
@@ -215,7 +227,8 @@ export default async function handler(req, res) {
               parts: [{ text: combinedSystemPrompt }]
             },
             contents: sanitizedContents,
-            generationConfig: generationConfig
+            generationConfig: generationConfig,
+            ...(isStandardGemini ? { tools: [{ googleSearch: {} }] } : {})
           };
 
           const response = await fetch(endpoint, {
