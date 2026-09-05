@@ -84,7 +84,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'API key is required.' });
     }
 
-    // Google Gemini Fallback Ladder with 3.8 and 3.7 Flash
+    // Google Gemini Fallback Ladder
     const GEMINI_LADDER = [
       'gemini-3.8-flash',
       'gemini-3.7-flash',
@@ -96,7 +96,7 @@ export default async function handler(req, res) {
       'gemini-2.5-flash-lite'
     ];
 
-    // OpenAI Fallback Ladder with GPT-5.6 Sol, Terra, and Luna
+    // OpenAI Fallback Ladder
     const OPENAI_LADDER = [
       'gpt-5.6-sol',
       'gpt-5.6-terra',
@@ -197,22 +197,11 @@ export default async function handler(req, res) {
           const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:streamGenerateContent?alt=sse&key=${apiKey}`;
           
           const isStandardGemini = currentModel.startsWith('gemini');
-          const isGemini25 = currentModel.includes('2.5');
 
-          const generationConfig = {
-            temperature: 0.7,
-            topP: 0.95,
-            maxOutputTokens: 2048
-          };
-
-          if (isGemini25) {
-            generationConfig.thinkingConfig = { thinkingBudget: 0 };
-          }
-
+          // Stripped out deprecated generationConfig parameters (temperature, top_p, top_k)
           const payload = {
             systemInstruction: { parts: [{ text: combinedSystemPrompt }] },
             contents: sanitizedContents,
-            generationConfig: generationConfig,
             ...(isStandardGemini ? { tools: [{ googleSearch: {} }] } : {})
           };
 
@@ -266,6 +255,7 @@ export default async function handler(req, res) {
           return res.end();
 
         } else {
+          // OpenAI Streaming
           const endpoint = 'https://api.openai.com/v1/chat/completions';
           
           const formattedMessages = [
@@ -296,7 +286,6 @@ export default async function handler(req, res) {
             body: JSON.stringify({
               model: currentModel,
               messages: formattedMessages,
-              temperature: 0.7,
               stream: true
             })
           });
