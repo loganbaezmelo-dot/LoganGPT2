@@ -74,32 +74,6 @@ STRICT FORMATTING & CAPABILITIES INSTRUCTIONS:
 
 const SYSTEM_PROMPT_CANVAS = "You are LoganGPT Canvas. Your goal is to build functional web applications based on user requests. OUTPUT RULES: 1. Provide a SINGLE, SELF-CONTAINED HTML file inside a markdown code block (```html ... ```). 2. Include all CSS (in <style>) and JS (in <script>) within that file. 3. Make the design modern, clean, and responsive. 4. Do not explain the code excessively, just build it. 5. If the user asks for a game or tool, make it playable/usable immediately.";
 
-// --- RETRY FETCH HELPER ---
-const fetchWithRetry = async (url, options, retries = 2, backoff = 500) => {
-  try {
-    const response = await fetch(url, options);
-    const rawText = await response.text();
-
-    let parsedData = {};
-    try {
-      parsedData = JSON.parse(rawText);
-    } catch {
-      parsedData = { error: rawText };
-    }
-
-    if (!response.ok) {
-      const errDetail = parsedData.error || `HTTP ${response.status} ${response.statusText}`;
-      throw new Error(typeof errDetail === 'string' ? errDetail : JSON.stringify(errDetail, null, 2));
-    }
-
-    return parsedData;
-  } catch (err) {
-    if (retries <= 0) throw err;
-    await new Promise(r => setTimeout(r, backoff));
-    return fetchWithRetry(url, options, retries - 1, backoff * 1.5);
-  }
-};
-
 // --- LOGIN COMPONENT ---
 function Login() {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -355,7 +329,6 @@ export default function App() {
       return;
     }
 
-    // Check LocalStorage first for large file thread
     const localLargeStore = JSON.parse(localStorage.getItem(`large_chat_${activeChatId}`) || '[]');
 
     const q = query(collection(db, 'users', user.uid, 'chats', activeChatId, 'messages'));
@@ -377,10 +350,6 @@ export default function App() {
 
       if (allMsgs.length > 0) {
         setMessages(allMsgs);
-        const lastMsg = allMsgs[allMsgs.length - 1];
-        if (lastMsg && (lastMsg.role === 'assistant' || lastMsg.role === 'model')) {
-          setIsLoading(false);
-        }
       }
 
       const lastCanvasMsg = [...allMsgs].reverse().find(m => (m.role === 'assistant' || m.role === 'model') && m.text && m.text.includes('```html'));
@@ -617,7 +586,6 @@ export default function App() {
       fullUserPrompt = `${fileHeader}${textToSend || 'Please analyze or use the attached file.'}`;
     }
 
-    // Check if payload exceeds 750KB to route between Firestore vs LocalStorage
     const estimatedBytes = (new Blob([fullUserPrompt + (imagePayload || '')])).size;
     const isLargePayload = estimatedBytes > 750 * 1024;
 
@@ -650,7 +618,6 @@ export default function App() {
       };
 
       if (isLargePayload) {
-        // Save to LocalStorage to prevent Firestore document limit crash
         const localKey = `large_chat_${currentChatId}`;
         const existingLocal = JSON.parse(localStorage.getItem(localKey) || '[]');
         localStorage.setItem(localKey, JSON.stringify([...existingLocal, userMessageObj]));
@@ -664,69 +631,130 @@ export default function App() {
         });
       }
 
-      let replyText = "";
-
+      // Creative mode (non-streaming image gen)
       if (currentMode === 'creative') {
         const encodedPrompt = encodeURIComponent(textToSend);
         const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=800&height=600&nologo=true`;
-        replyText = `🎨 **Image Generated** (via Pollinations AI)\n\n![${textToSend}](${imageUrl})`;
-      } else if (!currentKey) {
-        replyText = await queryLocalBrain(fullUserPrompt);
-      } else {
-        let sysPrompt = SYSTEM_PROMPT_STANDARD;
-        if (currentMode === 'canvas') {
-          sysPrompt = SYSTEM_PROMPT_CANVAS;
-        } else if (selectedAI) {
-          sysPrompt = `You are a custom AI Persona named ${selectedAI.name}. PERSONALITY: ${selectedAI.personality}`;
-        }
-
-        const formattedHistory = (messages || [])
-          .filter(m => (m && typeof m.text === 'string' && m.text.trim() !== '') || m.image)
-          .slice(-10)
-          .map(m => ({
-            role: m.role === 'assistant' || m.role === 'model' ? 'assistant' : 'user',
-            content: m.text || '',
-            image: m.image || null
-          }));
-
-        const requestMessages = [
-          ...formattedHistory,
-          { role: 'user', content: fullUserPrompt, image: imagePayload || null }
-        ];
-
-        const data = await fetchWithRetry(
-          '/api/chat',
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              provider: provider,
-              apiKey: currentKey,
-              messages: requestMessages,
-              systemPrompt: sysPrompt,
-              userTimeZone: effectiveTimeZone
-            })
-          }
-        );
-
-        replyText = data.reply && data.reply.trim() !== "" ? data.reply : await queryLocalBrain(fullUserPrompt);
+        const replyText = `🎨 **Image Generated** (via Pollinations AI)\n\n![${textToSend}](${imageUrl})`;
+        
+        await addDoc(collection(db, 'users', user.uid, 'chats', currentChatId, 'messages'), {
+          role: 'assistant', text: replyText, timestamp: serverTimestamp()
+        });
+        setIsLoading(false);
+        return;
       }
 
-      const assistantMessageObj = {
-        id: `msg-asst-${Date.now()}`,
-        role: 'assistant', 
-        text: replyText, 
-        timestamp: { seconds: Date.now() / 1000 }
-      };
+      // Offline mode
+      if (!currentKey) {
+        const replyText = await queryLocalBrain(fullUserPrompt);
+        await addDoc(collection(db, 'users', user.uid, 'chats', currentChatId, 'messages'), {
+          role: 'assistant', text: replyText, timestamp: serverTimestamp()
+        });
+        setIsLoading(false);
+        return;
+      }
 
+      // Setup live streaming placeholder message in UI
+      const streamMessageId = `stream-asst-${Date.now()}`;
+      setMessages((prev) => [
+        ...prev,
+        { id: streamMessageId, role: 'assistant', text: '', timestamp: { seconds: Date.now() / 1000 } }
+      ]);
+      setIsLoading(false);
+
+      let sysPrompt = SYSTEM_PROMPT_STANDARD;
+      if (currentMode === 'canvas') {
+        sysPrompt = SYSTEM_PROMPT_CANVAS;
+      } else if (selectedAI) {
+        sysPrompt = `You are a custom AI Persona named ${selectedAI.name}. PERSONALITY: ${selectedAI.personality}`;
+      }
+
+      const formattedHistory = (messages || [])
+        .filter(m => (m && typeof m.text === 'string' && m.text.trim() !== '') || m.image)
+        .slice(-10)
+        .map(m => ({
+          role: m.role === 'assistant' || m.role === 'model' ? 'assistant' : 'user',
+          content: m.text || '',
+          image: m.image || null
+        }));
+
+      const requestMessages = [
+        ...formattedHistory,
+        { role: 'user', content: fullUserPrompt, image: imagePayload || null }
+      ];
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: provider,
+          apiKey: currentKey,
+          messages: requestMessages,
+          systemPrompt: sysPrompt,
+          userTimeZone: effectiveTimeZone
+        })
+      });
+
+      if (!response.ok) {
+        const errJson = await response.json();
+        throw new Error(errJson.error || `HTTP ${response.status}`);
+      }
+
+      // Read SSE stream
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let streamedAccumulator = '';
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const dataStr = line.slice(6).trim();
+            if (dataStr === '[DONE]') continue;
+
+            try {
+              const parsed = JSON.parse(dataStr);
+              if (parsed.text) {
+                streamedAccumulator += parsed.text;
+                
+                // Update message bubble in real-time
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === streamMessageId ? { ...m, text: streamedAccumulator } : m
+                  )
+                );
+              }
+            } catch (err) {
+              // Skip incomplete chunk
+            }
+          }
+        }
+      }
+
+      const finalReply = streamedAccumulator || "No response generated.";
+
+      // Persist completed response
       if (isLargePayload) {
         const localKey = `large_chat_${currentChatId}`;
         const existingLocal = JSON.parse(localStorage.getItem(localKey) || '[]');
-        localStorage.setItem(localKey, JSON.stringify([...existingLocal, assistantMessageObj]));
-        setMessages((prev) => [...prev, assistantMessageObj]);
+        const updatedLocal = existingLocal.filter(m => m.id !== streamMessageId);
+        updatedLocal.push({
+          id: streamMessageId,
+          role: 'assistant',
+          text: finalReply,
+          timestamp: { seconds: Date.now() / 1000 }
+        });
+        localStorage.setItem(localKey, JSON.stringify(updatedLocal));
       } else {
         await addDoc(collection(db, 'users', user.uid, 'chats', currentChatId, 'messages'), {
-          role: 'assistant', text: replyText, timestamp: serverTimestamp()
+          role: 'assistant', text: finalReply, timestamp: serverTimestamp()
         });
       }
 
@@ -1064,7 +1092,7 @@ export default function App() {
                     <Zap className="w-4 h-4" fill="currentColor"/>
                   </div>
                   <div className="bg-slate-900/50 rounded-2xl p-4 text-xs text-slate-400 border border-white/5 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-slate-500 animate-ping" /> Routing request through {provider.toUpperCase()} ladder...
+                    <span className="w-2 h-2 rounded-full bg-slate-500 animate-ping" /> Streaming request from {provider.toUpperCase()}...
                   </div>
                 </div>
               )}
@@ -1289,7 +1317,7 @@ export default function App() {
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">OpenAI API Key</label>
                     <a 
-                      href="https://platform.openai.com/api-keys" 
+                      href="[https://platform.openai.com/api-keys](https://platform.openai.com/api-keys)" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1 transition-colors font-medium"
@@ -1316,7 +1344,7 @@ export default function App() {
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Google Gemini API Key</label>
                     <a 
-                      href="https://aistudio.google.com/app/apikey" 
+                      href="[https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors font-medium"
