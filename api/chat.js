@@ -1,20 +1,17 @@
 export const config = {
-  maxDuration: 60, // Extends Vercel Serverless Function timeout
+  maxDuration: 60,
 };
 
-// Helper function to extract search keywords and query the Wikipedia REST API safely
 async function fetchWikipediaContext(userText) {
   try {
     if (!userText || typeof userText !== 'string' || userText.trim().length < 3) return null;
 
-    // Skip search entirely for app generation, game building, or code requests
     const lower = userText.toLowerCase();
     if (
       lower.includes('make an app') || 
       lower.includes('build a game') || 
       lower.includes('create a canvas') || 
-      lower.includes('generate code') ||
-      lower.includes('lines of code')
+      lower.includes('generate code')
     ) {
       return null;
     }
@@ -26,17 +23,14 @@ async function fetchWikipediaContext(userText) {
       'was', 'released', 'make', 'an', 'app', 'out', 'display', 'screen'
     ]);
 
-    const sanitizedText = userText.replace(/[^\w\s]/gi, '');
-    const words = sanitizedText ? sanitizedText.split(/\s+/) : [];
+    const words = userText.replace(/[^\w\s]/gi, '').split(/\s+/);
     const keywords = words.filter(w => w.length > 1 && !stopWords.has(w.toLowerCase())).join(' ');
 
     if (!keywords || keywords.trim().length === 0) return null;
 
-    // Timeout signal for Wikipedia API (3 seconds max)
     const wikiController = new AbortController();
     const wikiTimeout = setTimeout(() => wikiController.abort(), 3000);
 
-    // 1. Search Wikipedia for matching page titles
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(keywords)}&format=json&origin=*`;
     const searchRes = await fetch(searchUrl, {
       headers: { 'User-Agent': 'LoganGPT/1.0 (https://logan-gpt.vercel.app)' },
@@ -56,7 +50,6 @@ async function fetchWikipediaContext(userText) {
       return null;
     }
 
-    // 2. Fetch article summary
     const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(topResult)}`;
     const summaryRes = await fetch(summaryUrl, {
       headers: { 'User-Agent': 'LoganGPT/1.0 (https://logan-gpt.vercel.app)' },
@@ -85,37 +78,32 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { provider = 'google', apiKey, messages = [], systemPrompt, userTimeZone } = req.body || {};
+    const { provider, apiKey, messages = [], systemPrompt, userTimeZone } = req.body || {};
 
-    if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
+    if (!apiKey) {
       return res.status(400).json({ error: 'API key is required.' });
     }
 
-    const cleanKey = apiKey.trim();
-
-    // Production Gemini & Gemma Model Fallback Ladder
+    // Google Gemini Fallback Ladder with 3.8 and 3.7 Flash
     const GEMINI_LADDER = [
+      'gemini-3.8-flash',
       'gemini-3.7-flash',
       'gemini-3.6-flash',
       'gemini-3.5-flash',
       'gemini-3.5-flash-lite',
-      'gemini-3.1-pro',
       'gemini-3.1-flash-lite',
-      'gemma-4-31b-it',
-      'gemma-4-26b-a4b-it'
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite'
     ];
 
-    // Production OpenAI Model Fallback Ladder (GPT-5.6 series first)
+    // OpenAI Fallback Ladder with GPT-5.6 Sol, Terra, and Luna
     const OPENAI_LADDER = [
       'gpt-5.6-sol',
       'gpt-5.6-terra',
       'gpt-5.6-luna',
-      'gpt-5.5',
-      'gpt-5.4',
-      'gpt-5.4-mini',
-      'gpt-4.1',
-      'gpt-4.1-mini',
-      'o4-mini'
+      'gpt-5.5-instant',
+      'gpt-4o-mini',
+      'gpt-4o'
     ];
 
     const modelLadder = provider === 'google' ? GEMINI_LADDER : OPENAI_LADDER;
@@ -139,15 +127,12 @@ export default async function handler(req, res) {
       formattedTimeStr = new Date().toISOString();
     }
 
-    // Limit active chat history to recent 10 messages
-    const recentMessages = Array.isArray(messages) && messages.length > 10 
-      ? messages.slice(-10) 
-      : (Array.isArray(messages) ? messages : []);
+    const recentMessages = messages.length > 10 ? messages.slice(-10) : messages;
 
     const lastUserMessageObj = recentMessages.slice().reverse().find(m => m.role === 'user');
     const lastUserText = typeof lastUserMessageObj?.content === 'string' ? lastUserMessageObj.content : '';
 
-    const isPersonaActive = systemPrompt && typeof systemPrompt === 'string' && systemPrompt.trim().length > 0 && !systemPrompt.includes("enterprise AI workspace");
+    const isPersonaActive = systemPrompt && systemPrompt.trim().length > 0 && !systemPrompt.includes("enterprise AI workspace");
 
     let wikiContext = null;
     if (!isPersonaActive && lastUserText) {
@@ -156,7 +141,7 @@ export default async function handler(req, res) {
 
     const timeContext = `[CURRENT REAL-WORLD DATE AND TIME]: ${formattedTimeStr} (${targetTimeZone}).`;
     
-    const personaInstruction = systemPrompt && typeof systemPrompt === 'string' && systemPrompt.trim() 
+    const personaInstruction = systemPrompt && systemPrompt.trim() 
       ? systemPrompt.trim() 
       : "You are LoganGPT, an enterprise AI workspace.";
 
@@ -169,25 +154,26 @@ export default async function handler(req, res) {
     const combinedSystemPrompt = `${personaInstruction}\n\nSTRICT BEHAVIOR RULES:\n1. Adopt the identity, tone, and character specified above.\n2. Output ONLY the direct in-character response to the user. Never print internal planning logs, analysis steps, or self-dialogue.${imageFormattingRules}${accuracyRules}${elicitationRules}\n\n${timeContext}${wikiContext ? `\n\n${wikiContext}` : ''}`;
 
     let rawContents = recentMessages.map(m => {
+      const role = m.role === 'assistant' || m.role === 'model' ? 'model' : 'user';
       const parts = [];
-      if (m.content) parts.push({ text: String(m.content) });
-      
-      // Vision payload handling for base64 inline images
-      if (m.image && typeof m.image === 'string' && m.image.includes(';base64,')) {
-        const [meta, base64Data] = m.image.split(';base64,');
-        const mimeType = meta.replace('data:', '') || 'image/png';
-        parts.push({
-          inlineData: {
-            mimeType,
-            data: base64Data
-          }
-        });
+
+      if (m.image) {
+        const matches = m.image.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+        if (matches) {
+          parts.push({
+            inlineData: {
+              mimeType: matches[1],
+              data: matches[2]
+            }
+          });
+        }
       }
 
-      return {
-        role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
-        parts: parts.length > 0 ? parts : [{ text: ' ' }]
-      };
+      if (m.content) {
+        parts.push({ text: m.content });
+      }
+
+      return { role, parts };
     }).filter(c => c.parts.length > 0);
 
     const sanitizedContents = [];
@@ -195,7 +181,7 @@ export default async function handler(req, res) {
       if (sanitizedContents.length > 0 && sanitizedContents[sanitizedContents.length - 1].role === msg.role) {
         sanitizedContents[sanitizedContents.length - 1].parts.push(...msg.parts);
       } else {
-        sanitizedContents.push(msg);
+        sanitizedContents.push({ role: msg.role, parts: [...msg.parts] });
       }
     }
 
@@ -203,21 +189,15 @@ export default async function handler(req, res) {
       sanitizedContents.push({ role: 'user', parts: [{ text: 'Hi' }] });
     }
 
-    let replyText = '';
-    let lastError = null;
-    let successfulModel = null;
+    let streamEstablished = false;
 
     for (const currentModel of modelLadder) {
       try {
-        console.log(`[LoganGPT API] Trying ${provider.toUpperCase()} model: ${currentModel}`);
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 55000);
-
         if (provider === 'google') {
-          const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${cleanKey}`;
-
+          const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:streamGenerateContent?alt=sse&key=${apiKey}`;
+          
           const isStandardGemini = currentModel.startsWith('gemini');
+          const isGemini25 = currentModel.includes('2.5');
 
           const generationConfig = {
             temperature: 0.7,
@@ -225,10 +205,12 @@ export default async function handler(req, res) {
             maxOutputTokens: 2048
           };
 
+          if (isGemini25) {
+            generationConfig.thinkingConfig = { thinkingBudget: 0 };
+          }
+
           const payload = {
-            systemInstruction: {
-              parts: [{ text: combinedSystemPrompt }]
-            },
+            systemInstruction: { parts: [{ text: combinedSystemPrompt }] },
             contents: sanitizedContents,
             generationConfig: generationConfig,
             ...(isStandardGemini ? { tools: [{ googleSearch: {} }] } : {})
@@ -237,89 +219,142 @@ export default async function handler(req, res) {
           const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-            signal: controller.signal
+            body: JSON.stringify(payload)
           });
 
-          clearTimeout(timeoutId);
-          
-          const data = await response.json();
-
           if (!response.ok) {
-            throw new Error(data.error?.message || `HTTP ${response.status}`);
+            const errDetail = await response.text();
+            throw new Error(errDetail);
           }
 
-          const candidate = data.candidates?.[0];
-          const finishReason = candidate?.finishReason;
+          res.setHeader('Content-Type', 'text/event-stream');
+          res.setHeader('Cache-Control', 'no-cache, no-transform');
+          res.setHeader('Connection', 'keep-alive');
+          streamEstablished = true;
 
-          const parts = candidate?.content?.parts || [];
-          const textParts = parts.filter(p => !p.thought).map(p => p.text || '');
-          replyText = textParts.join('').trim() || parts.map(p => p.text || '').join('').trim();
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
 
-          if (!replyText) {
-            throw new Error(`Model returned empty text (Finish reason: ${finishReason || 'UNKNOWN'})`);
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const parsed = JSON.parse(line.slice(6));
+                  const candidate = parsed.candidates?.[0];
+                  const parts = candidate?.content?.parts || [];
+                  const textChunk = parts.filter(p => !p.thought).map(p => p.text).join('');
+
+                  if (textChunk) {
+                    res.write(`data: ${JSON.stringify({ text: textChunk })}\n\n`);
+                  }
+                } catch (err) {
+                  // Skip incomplete chunks
+                }
+              }
+            }
           }
 
-          successfulModel = currentModel;
-          break;
+          res.write(`data: [DONE]\n\n`);
+          return res.end();
 
         } else {
           const endpoint = 'https://api.openai.com/v1/chat/completions';
           
           const formattedMessages = [
             { role: 'system', content: combinedSystemPrompt },
-            ...recentMessages.map(m => ({
-              role: m.role === 'assistant' || m.role === 'model' ? 'assistant' : 'user',
-              content: m.content || ''
-            }))
+            ...recentMessages.map(m => {
+              if (m.image) {
+                return {
+                  role: m.role === 'assistant' || m.role === 'model' ? 'assistant' : 'user',
+                  content: [
+                    { type: 'text', text: m.content || '' },
+                    { type: 'image_url', image_url: { url: m.image } }
+                  ]
+                };
+              }
+              return {
+                role: m.role === 'assistant' || m.role === 'model' ? 'assistant' : 'user',
+                content: m.content || ''
+              };
+            })
           ];
 
           const response = await fetch(endpoint, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${cleanKey}`
+              'Authorization': `Bearer ${apiKey}`
             },
             body: JSON.stringify({
               model: currentModel,
               messages: formattedMessages,
-              temperature: 0.7
-            }),
-            signal: controller.signal
+              temperature: 0.7,
+              stream: true
+            })
           });
 
-          clearTimeout(timeoutId);
-          
-          const data = await response.json();
-
           if (!response.ok) {
-            throw new Error(data.error?.message || `HTTP ${response.status}`);
+            const errDetail = await response.text();
+            throw new Error(errDetail);
           }
 
-          replyText = data.choices?.[0]?.message?.content || '';
-          
-          if (!replyText.trim()) {
-            throw new Error('Model returned empty text.');
+          res.setHeader('Content-Type', 'text/event-stream');
+          res.setHeader('Cache-Control', 'no-cache, no-transform');
+          res.setHeader('Connection', 'keep-alive');
+          streamEstablished = true;
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const dataStr = line.slice(6).trim();
+                if (dataStr === '[DONE]') continue;
+
+                try {
+                  const parsed = JSON.parse(dataStr);
+                  const chunk = parsed.choices?.[0]?.delta?.content || '';
+                  if (chunk) {
+                    res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
+                  }
+                } catch (err) {
+                  // Skip incomplete chunks
+                }
+              }
+            }
           }
 
-          successfulModel = currentModel;
-          break;
+          res.write(`data: [DONE]\n\n`);
+          return res.end();
         }
 
       } catch (err) {
-        const errorMsg = err.name === 'AbortError' ? 'Request timed out after 55s' : err.message;
-        console.warn(`[LoganGPT API] Model ${currentModel} failed: ${errorMsg}. Trying next model...`);
-        lastError = errorMsg;
+        console.warn(`[LoganGPT Stream] Model ${currentModel} failed: ${err.message}. Trying next model...`);
+        if (streamEstablished) {
+          res.write(`data: ${JSON.stringify({ text: "\n\n*[Stream disconnected]*" })}\n\n`);
+          return res.end();
+        }
       }
     }
 
-    if (!successfulModel) {
-      return res.status(500).json({ 
-        error: `All models in ${provider.toUpperCase()} fallback ladder failed. Last error: ${lastError}` 
-      });
-    }
-
-    return res.status(200).json({ reply: replyText, usedModel: successfulModel });
+    return res.status(500).json({ error: 'All models failed to stream response.' });
 
   } catch (err) {
     console.error("API Route Execution Error:", err);
