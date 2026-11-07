@@ -185,9 +185,15 @@ export default async function handler(req, res) {
       }
     }
 
+    if (sanitizedContents.length > 0 && sanitizedContents[0].role === 'model') {
+      sanitizedContents.shift();
+    }
+
     if (sanitizedContents.length === 0) {
       sanitizedContents.push({ role: 'user', parts: [{ text: 'Hi' }] });
     }
+
+    let lastError = null;
 
     for (const currentModel of modelLadder) {
       try {
@@ -199,7 +205,7 @@ export default async function handler(req, res) {
           const payload = {
             systemInstruction: { parts: [{ text: combinedSystemPrompt }] },
             contents: sanitizedContents,
-            ...(isStandardGemini ? { tools: [{ googleSearch: {} }] } : {})
+            ...(isStandardGemini ? { tools: [{ google_search: {} }] } : {})
           };
 
           const response = await fetch(endpoint, {
@@ -210,7 +216,7 @@ export default async function handler(req, res) {
 
           if (!response.ok) {
             const errDetail = await response.text();
-            throw new Error(errDetail);
+            throw new Error(`Google API ${response.status} (${currentModel}): ${errDetail}`);
           }
 
           const data = await response.json();
@@ -259,7 +265,7 @@ export default async function handler(req, res) {
 
           if (!response.ok) {
             const errDetail = await response.text();
-            throw new Error(errDetail);
+            throw new Error(`OpenAI API ${response.status} (${currentModel}): ${errDetail}`);
           }
 
           const data = await response.json();
@@ -271,11 +277,14 @@ export default async function handler(req, res) {
         }
 
       } catch (err) {
-        console.warn(`[LoganGPT] Model ${currentModel} failed: ${err.message}. Trying next model...`);
+        lastError = err.message;
+        console.warn(`[LoganGPT] Model ${currentModel} failed: ${err.message}`);
       }
     }
 
-    return res.status(500).json({ error: 'All models failed to return a response.' });
+    return res.status(500).json({ 
+      error: `All models failed to return a response. Last error: ${lastError || 'Unknown error'}` 
+    });
 
   } catch (err) {
     console.error("API Route Execution Error:", err);
