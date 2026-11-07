@@ -28,17 +28,57 @@
     </script>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 
-    <!-- Native Global Opener (Bypasses React Synthetic Events & Router Traps) -->
+    <!-- Global URL Sanitizer & Interceptor -->
     <script>
+      function sanitizeHref(raw) {
+        if (!raw || typeof raw !== 'string') return raw;
+        var decoded = decodeURIComponent(raw);
+
+        // 1. Extract valid web address if wrapped in markdown [label](url)
+        var mdMatch = decoded.match(/\((https?:\/?[^\)]+)\)/i);
+        if (mdMatch) {
+          decoded = mdMatch[1];
+        }
+
+        // 2. Fallback regex to isolate an embedded https?:// or https:/
+        var urlMatch = decoded.match(/https?:\/+[^\s\]\)\"\']+/i);
+        if (urlMatch) {
+          decoded = urlMatch[0];
+        }
+
+        // 3. Strip stray markdown bracket artifacts
+        decoded = decoded.replace(/[\[\]]/g, '').trim();
+
+        // 4. Ensure proper double-slash protocol (fixes https:/ to https://)
+        decoded = decoded.replace(/^(https?):\/+([^\/])/, '$1://$2');
+
+        return decoded;
+      }
+
       window.openKeyLink = function(url) {
+        var cleanUrl = sanitizeHref(url);
         var a = document.createElement('a');
-        a.href = url;
+        a.href = cleanUrl;
         a.target = '_blank';
         a.rel = 'noopener noreferrer';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
       };
+
+      // Intercept any clicked <a> tag before the browser appends logan-gpt domain
+      document.addEventListener('click', function(e) {
+        var link = e.target.closest('a');
+        if (!link) return;
+
+        var rawAttr = link.getAttribute('href');
+        if (rawAttr && (rawAttr.includes('[http') || rawAttr.includes('(http') || rawAttr.includes('https:/'))) {
+          e.preventDefault();
+          e.stopPropagation();
+          var fixed = sanitizeHref(rawAttr);
+          window.open(fixed, '_blank', 'noopener,noreferrer');
+        }
+      }, true);
     </script>
   </head>
   <body class="bg-[#0B1120] text-slate-100 overflow-hidden">
