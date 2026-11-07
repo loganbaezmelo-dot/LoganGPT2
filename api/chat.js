@@ -189,12 +189,10 @@ export default async function handler(req, res) {
       sanitizedContents.push({ role: 'user', parts: [{ text: 'Hi' }] });
     }
 
-    let streamEstablished = false;
-
     for (const currentModel of modelLadder) {
       try {
         if (provider === 'google') {
-          const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:streamGenerateContent?alt=sse&key=${apiKey}`;
+          const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`;
           
           const isStandardGemini = currentModel.startsWith('gemini');
 
@@ -215,52 +213,17 @@ export default async function handler(req, res) {
             throw new Error(errDetail);
           }
 
-          res.writeHead(200, {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache, no-transform',
-            'Connection': 'keep-alive',
-            'X-Accel-Buffering': 'no',
-          });
-          if (typeof res.flushHeaders === 'function') {
-            res.flushHeaders();
+          const data = await response.json();
+          const candidate = data.candidates?.[0];
+          const parts = candidate?.content?.parts || [];
+          const text = parts.filter(p => !p.thought).map(p => p.text).join('');
+
+          if (text) {
+            return res.status(200).json({ text, model: currentModel });
           }
-          streamEstablished = true;
-
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = '';
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop();
-
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                try {
-                  const parsed = JSON.parse(line.slice(6));
-                  const candidate = parsed.candidates?.[0];
-                  const parts = candidate?.content?.parts || [];
-                  const textChunk = parts.filter(p => !p.thought).map(p => p.text).join('');
-
-                  if (textChunk) {
-                    res.write(`data: ${JSON.stringify({ text: textChunk })}\n\n`);
-                  }
-                } catch (err) {
-                  // Skip incomplete chunks
-                }
-              }
-            }
-          }
-
-          res.write(`data: [DONE]\n\n`);
-          return res.end();
 
         } else {
-          // OpenAI Streaming
+          // OpenAI Non-Streaming
           const endpoint = 'https://api.openai.com/v1/chat/completions';
           
           const formattedMessages = [
@@ -290,8 +253,7 @@ export default async function handler(req, res) {
             },
             body: JSON.stringify({
               model: currentModel,
-              messages: formattedMessages,
-              stream: true
+              messages: formattedMessages
             })
           });
 
@@ -300,76 +262,23 @@ export default async function handler(req, res) {
             throw new Error(errDetail);
           }
 
-          res.writeHead(200, {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache, no-transform',
-            'Connection': 'keep-alive',
-            'X-Accel-Buffering': 'no',
-          });
-          if (typeof res.flushHeaders === 'function') {
-            res.flushHeaders();
+          const data = await response.json();
+          const text = data.choices?.[0]?.message?.content || '';
+
+          if (text) {
+            return res.status(200).json({ text, model: currentModel });
           }
-          streamEstablished = true;
-
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = '';
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop();
-
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const dataStr = line.slice(6).trim();
-                if (dataStr === '[DONE]') continue;
-
-                try {
-                  const parsed = JSON.parse(dataStr);
-                  const chunk = parsed.choices?.[0]?.delta?.content || '';
-                  if (chunk) {
-                    res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
-                  }
-                } catch (err) {
-                  // Skip incomplete chunks
-                }
-              }
-            }
-          }
-
-          res.write(`data: [DONE]\n\n`);
-          return res.end();
         }
 
       } catch (err) {
-        console.warn(`[LoganGPT Stream] Model ${currentModel} failed: ${err.message}. Trying next model...`);
-        if (streamEstablished) {
-          res.write(`data: ${JSON.stringify({ text: "\n\n*[Stream disconnected]*" })}\n\n`);
-          return res.end();
-        }
+        console.warn(`[LoganGPT] Model ${currentModel} failed: ${err.message}. Trying next model...`);
       }
     }
 
-    if (!res.headersSent) {
-      return res.status(500).json({ error: 'All models failed to stream response.' });
-    } else {
-      res.write(`data: ${JSON.stringify({ error: 'All models failed to stream response.' })}\n\n`);
-      res.write(`data: [DONE]\n\n`);
-      return res.end();
-    }
+    return res.status(500).json({ error: 'All models failed to return a response.' });
 
   } catch (err) {
     console.error("API Route Execution Error:", err);
-    if (!res.headersSent) {
-      return res.status(500).json({ error: err.message || 'Internal Server Error' });
-    } else {
-      res.write(`data: ${JSON.stringify({ error: err.message || 'Internal Server Error' })}\n\n`);
-      res.write(`data: [DONE]\n\n`);
-      return res.end();
-    }
+    return res.status(500).json({ error: err.message || 'Internal Server Error' });
   }
 }
