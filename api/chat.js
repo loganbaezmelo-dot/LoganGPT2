@@ -84,16 +84,14 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'API key is required.' });
     }
 
-    // Google Gemini Fallback Ladder
+    // Google Gemini Fallback Ladder (Active supported tiers)
     const GEMINI_LADDER = [
       'gemini-3.8-flash',
       'gemini-3.7-flash',
       'gemini-3.6-flash',
       'gemini-3.5-flash',
       'gemini-3.5-flash-lite',
-      'gemini-3.1-flash-lite',
-      'gemini-2.5-flash',
-      'gemini-2.5-flash-lite'
+      'gemini-3.1-flash-lite'
     ];
 
     // OpenAI Fallback Ladder
@@ -199,13 +197,12 @@ export default async function handler(req, res) {
       try {
         if (provider === 'google') {
           const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`;
-          
-          const isStandardGemini = currentModel.startsWith('gemini');
 
+          // Note: Standard Generative Language REST accepts google_search grounding
           const payload = {
             systemInstruction: { parts: [{ text: combinedSystemPrompt }] },
             contents: sanitizedContents,
-            ...(isStandardGemini ? { tools: [{ google_search: {} }] } : {})
+            tools: [{ google_search: {} }]
           };
 
           const response = await fetch(endpoint, {
