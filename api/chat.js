@@ -198,7 +198,6 @@ export default async function handler(req, res) {
           
           const isStandardGemini = currentModel.startsWith('gemini');
 
-          // Stripped out deprecated generationConfig parameters (temperature, top_p, top_k)
           const payload = {
             systemInstruction: { parts: [{ text: combinedSystemPrompt }] },
             contents: sanitizedContents,
@@ -216,9 +215,15 @@ export default async function handler(req, res) {
             throw new Error(errDetail);
           }
 
-          res.setHeader('Content-Type', 'text/event-stream');
-          res.setHeader('Cache-Control', 'no-cache, no-transform');
-          res.setHeader('Connection', 'keep-alive');
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache, no-transform',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no',
+          });
+          if (typeof res.flushHeaders === 'function') {
+            res.flushHeaders();
+          }
           streamEstablished = true;
 
           const reader = response.body.getReader();
@@ -295,9 +300,15 @@ export default async function handler(req, res) {
             throw new Error(errDetail);
           }
 
-          res.setHeader('Content-Type', 'text/event-stream');
-          res.setHeader('Cache-Control', 'no-cache, no-transform');
-          res.setHeader('Connection', 'keep-alive');
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache, no-transform',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no',
+          });
+          if (typeof res.flushHeaders === 'function') {
+            res.flushHeaders();
+          }
           streamEstablished = true;
 
           const reader = response.body.getReader();
@@ -343,10 +354,22 @@ export default async function handler(req, res) {
       }
     }
 
-    return res.status(500).json({ error: 'All models failed to stream response.' });
+    if (!res.headersSent) {
+      return res.status(500).json({ error: 'All models failed to stream response.' });
+    } else {
+      res.write(`data: ${JSON.stringify({ error: 'All models failed to stream response.' })}\n\n`);
+      res.write(`data: [DONE]\n\n`);
+      return res.end();
+    }
 
   } catch (err) {
     console.error("API Route Execution Error:", err);
-    return res.status(500).json({ error: err.message || 'Internal Server Error' });
+    if (!res.headersSent) {
+      return res.status(500).json({ error: err.message || 'Internal Server Error' });
+    } else {
+      res.write(`data: ${JSON.stringify({ error: err.message || 'Internal Server Error' })}\n\n`);
+      res.write(`data: [DONE]\n\n`);
+      return res.end();
+    }
   }
 }
